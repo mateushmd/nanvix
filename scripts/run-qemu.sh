@@ -69,6 +69,7 @@ function run_qemu
 	local mode=$4       # Spawn mode (run or debug).
 	local timeout=$5    # Timeout for test mode.
 	local GDB_PORT=1234 # GDB port used for debugging.
+	local nic="-nic model=e1000"
 	local cmd=""
 
 	# Check if the target is unsupported.
@@ -121,6 +122,7 @@ function run_qemu
 	  		$machine
 			$stdout
 			$smp
+			$nic
 			-display none
 			-cpu pentium3
 			-m ${MEMSIZE}B
