@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use sys::error::Error;
 use syscall::safe::time::Time;
 use smoltcp::{

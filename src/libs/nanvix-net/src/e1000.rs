@@ -1,3 +1,5 @@
+use ::alloc::vec::Vec;
+
 const PAGE_SIZE:usize = 4096;
 const RING_SIZE: usize = 256;
 const MBUF_SIZE: usize = 2048;
@@ -50,7 +52,7 @@ pub struct E1000Repr<'a, K: KernelFunctions> {
     tx_ring_dma: usize,
     rx_ring: &'a mut [Rx_desc],
     tx_ring: &'a mut [Tx_desc],
-    rx_mbufs: Vec<usize>, // Can use vec??
+    rx_mbufs: Vec<usize>,
     tx_mbufs: Vec<usize>,
     mbuf_size: usize,
     kfn: K,
@@ -71,7 +73,6 @@ impl<'a, K: KernelFunctions> E1000Repr<'a, K> {
     }
 
     pub fn receive(&mut self) -> Option<Vec<Vec<u8>>> {
-        // Can we use Vec???
         todo!("Receive Function")
     }
 
