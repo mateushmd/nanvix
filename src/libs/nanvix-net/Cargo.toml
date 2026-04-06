@@ -17,6 +17,7 @@ syscall-time = ["dep:syscall"]
 smoltcp = { workspace = true, features = ["medium-ethernet"] }
 syscall = { workspace = true, optional = true, features = ["syscall"] }
 sys = { workspace = true }
+volatile = { workspace = true }
 
 [lints]
 workspace = true
