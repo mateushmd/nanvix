@@ -9,9 +9,13 @@ homepage.workspace = true
 [lib]
 crate-type = ["lib"]
 
+[features]
+default = []
+syscall-time = ["dep:syscall"]
+
 [dependencies]
-smoltcp = { workspace = true }
-syscall = { workspace = true }
+smoltcp = { workspace = true, features = ["medium-ethernet"] }
+syscall = { workspace = true, optional = true, features = ["syscall"] }
 sys = { workspace = true }
 
 [lints]
