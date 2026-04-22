@@ -1,0 +1,31 @@
+[package]
+name = "nanvix-net"
+version.workspace = true
+license-file.workspace = true
+edition.workspace = true
+authors.workspace = true
+homepage.workspace = true
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+syscall-time = ["dep:syscall"]
+default = ["panic"]
+trace = ["nvx/trace"]
+debug = ["nvx/debug"]
+info = ["nvx/info"]
+warn = ["nvx/warn"]
+error = ["nvx/error"]
+panic = ["nvx/panic"]
+
+
+[dependencies]
+smoltcp = { workspace = true, features = ["medium-ethernet"] }
+syscall = { workspace = true, optional = true, features = ["syscall"] }
+sys = { workspace = true }
+volatile = { workspace = true }
+nvx = { workspace = true }
+
+[lints]
+workspace = true

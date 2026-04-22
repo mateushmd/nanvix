@@ -57,12 +57,12 @@ members = [
         "src/uservm",
         "src/user/hello-rust-nostd",
         "src/user/hello-wasm",
+        "src/user/nanvix-net",
         "src/utils/echo-client",
         "src/utils/nanvix-bench",
         "src/utils/nanvix-test",
         "src/utils/nanvixd",
         "src/utils/strace",
-        "src/libs/nanvix-net",
         "src/daemons/netd",
 ]
 

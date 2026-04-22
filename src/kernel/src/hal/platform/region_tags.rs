@@ -20,10 +20,10 @@ pub const LAPIC_MMIO_TAG: MmioTag = MmioTag::new(*b"LAPIC   ");
 /// Tag used to identify the MicroVM RAMFS MMIO region.
 #[cfg(feature = "microvm")]
 pub const RAMFS_MMIO_TAG: MmioTag = MmioTag::new(*b"RAMFS   ");
-
+#[allow(dead_code)]
 /// Tag used to identify the ECAM MMIO region.
 pub const ECAM_MMIO_TAG: MmioTag = MmioTag::new(*b"ECAM    ");
-
+#[allow(dead_code)]
 /// Tag used to identify the E1000 MMIO region.
 pub const E1000_MMIO_TAG: MmioTag = MmioTag::new(*b"E1000   ");
 
