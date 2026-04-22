@@ -1,6 +1,9 @@
 use ::core::alloc::Layout;
 use ::alloc::alloc::{alloc_zeroed, dealloc};
+use ::sys::{kcall::mm, mm::MmioRegionInfo};
 use crate::e1000::KernelFunctions;
+
+const E1000_MMIO_TAG: u64 = u64::from_be_bytes(*b"E1000   ");
 
 struct NanvixKernelFunctions;
 

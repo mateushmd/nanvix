@@ -56,6 +56,12 @@ mod baremetal;
 #[cfg(any(feature = "qemu-isapc", feature = "qemu-pc"))]
 mod qemu;
 
+#[cfg(feature = "pci")]
+mod pci;
+
+#[cfg(feature = "pci")]
+use pci::PciBus;
+
 #[cfg(feature = "bios")]
 pub mod bios;
 
@@ -209,6 +215,21 @@ fn register_pit(ioports: &mut IoPortAllocator) -> Result<Pit, Error> {
     ioports.register_read_write(::arch::cpu::pit::PIT_DATA)?;
 
     Pit::new(ioports, ::config::kernel::TIMER_FREQ)
+}
+
+#[cfg(feature = "pci")]
+fn register_pci_devices(
+    ioports: &mut IoPortAllocator,
+    ioaddresses: &mut IoMemoryAllocator,
+    mmio_regions: &mut LinkedList<TruncatedMemoryRegion<VirtualAddress>>,
+) -> Result<(), Error> {
+    let mut pci = PciBus::new(ioports)?;
+    
+    for bus in 0..=255 {
+        for slot in 0..32 {
+            let vendor_device = pci.read_config(bus, slot, 0, 0x00);
+        }
+    }
 }
 
 pub fn init(

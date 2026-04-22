@@ -33,7 +33,9 @@ cc = { workspace = true }
 cfg-if = { workspace = true }
 
 [features]
-default = ["microvm"]
+# default = ["microvm"]
+# TODO: change back to microvm before submission
+default = ["qemu-pc"]
 
 # Machine Types
 hyperlight = [
@@ -61,6 +63,7 @@ pc = [
     "cmos",
     "mboot",
     "pit",
+    "pci",
     "warn",
     "dep:config",
     "config/pc",
@@ -80,6 +83,7 @@ pit = []
 putb = []
 puts = []
 stdio = []
+pci = []
 
 # Interface Features
 kcall = []
