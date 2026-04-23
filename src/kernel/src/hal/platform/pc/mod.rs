@@ -226,33 +226,43 @@ fn register_pci_devices(
 
     let mut found_nic = false;
     
-    for bus in 0..=255 {
-        for slot in 0..32 {
-            let vendor_device = pci.read_config(bus, slot, 0, 0x00);
-            if !found_nic && vendor_device == 0x100E8086 {
-                found_nic = true;
+    for slot in 0..32 {
+        // Always looking at bus 0, its unlikely to find the NIC
+        // in a different bus
+        let vendor_device = pci.read_config(0, slot, 0, 0x00);
 
-                info!("PCI: found e1000 at Bus {}, Slot {}", bus, slot);
+        // Found e1000
+        if !found_nic && vendor_device == 0x100E8086 {
+            found_nic = true;
 
-                let e1000_hardcoded_base: u32 = 0xFE800000;
-                pci.write_config(bus, slot, 0, 0x10, e1000_hardcoded_base);
+            info!("PCI: found e1000 at Bus {}, Slot {}", bus, slot);
 
-                let mut cmd = pci.read_config(bus, slot, 0, 0x04);
-                cmd |= 0x00000006;
-                pci.write_config(bus, slot, 0, 0x04, cmd);
+            // TODO: figure out the right way to define the base address
+            let e1000_hardcoded_base: u32 = 0xFE800000;
 
-                let e1000_size: usize = 0x20000;
-                let region = TruncatedMemoryRegion::new(
-                    "e1000",
-                    PageAligned::from_raw_value(e1000_hardcoded_base as usize)?,
-                    e1000_size,
-                    MemoryRegionType::Mmio,
-                    AccessPermission::RDWR
-                )?;
+            // For a header type 0x00 device, writing to offset 0x10
+            // sets the base address for BAR0 (register 0x5)
+            pci.write_config(bus, slot, 0, 0x10, e1000_hardcoded_base);
 
-                ioaddresses.register(crate::hal::platform::region_tags::E1000_MMIO_TAG, region.clone())?;
-                mmio_regions.push_back(region);
-            }
+            // Reads the Status and Command registers at offset 0x04,
+            // sets bits 1 (Memory Space) and 2 (Bus Master) to 1
+            // and write back
+            let mut cmd = pci.read_config(bus, slot, 0, 0x04);
+            cmd |= 0x00000006;
+            pci.write_config(bus, slot, 0, 0x04, cmd);
+
+            let e1000_size: usize = 0x20000;
+            let region = TruncatedMemoryRegion::new(
+                "e1000",
+                PageAligned::from_raw_value(e1000_hardcoded_base as usize)?,
+                e1000_size,
+                MemoryRegionType::Mmio,
+                AccessPermission::RDWR
+            )?;
+
+            ioaddresses.register(crate::hal::platform::region_tags::E1000_MMIO_TAG, region.clone())?;
+            
+            mmio_regions.push_back(region);
         }
     }
 
