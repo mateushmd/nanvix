@@ -108,6 +108,8 @@ pub struct Platform {
     #[cfg(feature = "pit")]
     pub _pit: Pit,
     pub arch: Arch,
+    #[cfg(feature = "pci")]
+    pub _pci: PciBus
 }
 
 //==================================================================================================
@@ -220,16 +222,21 @@ fn register_pit(ioports: &mut IoPortAllocator) -> Result<Pit, Error> {
 #[cfg(feature = "pci")]
 fn register_pci_devices(
     ioports: &mut IoPortAllocator,
-    ioaddresses: &mut IoMemoryAllocator,
-    mmio_regions: &mut LinkedList<TruncatedMemoryRegion<VirtualAddress>>,
-) -> Result<(), Error> {
+    _ioaddresses: &mut IoMemoryAllocator,
+    _mmio_regions: &mut LinkedList<TruncatedMemoryRegion<VirtualAddress>>,
+) -> Result<PciBus, Error> {
     let mut pci = PciBus::new(ioports)?;
     
     for bus in 0..=255 {
         for slot in 0..32 {
             let vendor_device = pci.read_config(bus, slot, 0, 0x00);
+            if vendor_device != 0xFFFFFFFF {
+                trace!("DEVICE FOUND: {:#x}", vendor_device);
+            }
         }
     }
+
+    Ok(pci)
 }
 
 pub fn init(
@@ -240,6 +247,14 @@ pub fn init(
     madt: &Option<MadtInfo>,
     mem_lower: Option<usize>,
 ) -> Result<Platform, Error> {
+    
+    unsafe {
+        ::arch::io::out32(0xCF8, 0x80000000);
+        let raw_val = ::arch::io::in32(0xCFC);
+        debug!("RAW PCI TEST: {:#x}", raw_val);
+    }
+
+
     // Register I/O ports for 8259 PIC.
     ioports.register_read_write(pic::PIC_CTRL_MASTER as u16)?;
     ioports.register_read_write(pic::PIC_DATA_MASTER as u16)?;
@@ -318,5 +333,7 @@ pub fn init(
         _pit: register_pit(ioports)?,
         #[cfg(feature = "cmos")]
         _cmos: register_cmos(ioports)?,
+        #[cfg(feature = "pci")]
+        _pci: register_pci_devices(ioports, ioaddresses, mmio_regions)?
     })
 }

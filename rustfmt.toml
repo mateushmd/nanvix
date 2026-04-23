@@ -2,7 +2,7 @@
 # Licensed under the MIT license.
 
 # Stable Options
-max_width = 100
+max_width = 101
 fn_call_width = 100
 merge_derives = true
 reorder_modules = true

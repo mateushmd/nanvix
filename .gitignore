@@ -21,6 +21,7 @@ toolchain
 bin/
 /lib/
 /logs/
+image/
 images/
 plots/
 target/

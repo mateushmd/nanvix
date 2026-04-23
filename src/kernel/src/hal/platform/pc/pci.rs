@@ -1,4 +1,5 @@
 use crate::hal::io::{ IoPortAllocator, ReadWriteIoPort };
+use ::sys::error::Error;
 
 // CONFIG_ADDRESS register address
 const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
@@ -34,15 +35,28 @@ pub struct PciBus {
     config_data: ReadWriteIoPort
 }
 
-pub impl PciBus {
+#[allow(dead_code)]
+impl PciBus {
     pub fn new(ioports: &mut IoPortAllocator) -> Result<Self, Error> {
         ioports.register_read_write(PCI_CONFIG_ADDRESS)?;
+        ioports.register_read_write(PCI_CONFIG_ADDRESS + 1)?;
+        ioports.register_read_write(PCI_CONFIG_ADDRESS + 2)?;
+        ioports.register_read_write(PCI_CONFIG_ADDRESS + 3)?;
+        
         ioports.register_read_write(PCI_CONFIG_DATA)?;
+        ioports.register_read_write(PCI_CONFIG_DATA + 1)?;
+        ioports.register_read_write(PCI_CONFIG_DATA + 2)?;
+        ioports.register_read_write(PCI_CONFIG_DATA + 3)?;
 
-        PciBus {
-            config_address: ioports.allocate_read_write(PCI_CONFIG_ADDRESS)?,
-            config_data: ioports.allocate_read_write(PCI_CONFIG_DATA)?
-        }
+        let config_address = ioports.allocate_read_write(PCI_CONFIG_ADDRESS)?;
+        let config_data = ioports.allocate_read_write(PCI_CONFIG_DATA)?;
+
+        let pci_bus = PciBus {
+            config_address: config_address,
+            config_data: config_data
+        };
+
+        Ok(pci_bus)
     }
 
     /// 
@@ -50,7 +64,7 @@ pub impl PciBus {
     /// 
     /// Reads the CONFIG_DATA register value
     ///
-    pub fn read_config(&self, bus: u8, slot: u8, func: u8, offset: u8) -> u32 {
+    pub fn read_config(&mut self, bus: u8, slot: u8, func: u8, offset: u8) -> u32 {
         let address = BASE_ADDRESS
             | (bus as u32) << BUS_SHIFT
             | (slot as u32) << SLOT_SHIFT
@@ -67,8 +81,8 @@ pub impl PciBus {
     /// Writes a value to the CONFIG_DATA register
     ///
     pub fn write_config(
-        &self, bus: u8, slot: u8, func: u8, offset: u8, value: u32
-    ) -> u32 {
+        &mut self, bus: u8, slot: u8, func: u8, offset: u8, value: u32
+    ) {
         let address = BASE_ADDRESS
             | (bus as u32) << BUS_SHIFT
             | (slot as u32) << SLOT_SHIFT
