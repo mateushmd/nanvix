@@ -37,7 +37,7 @@ pub struct PciBus {
 
 #[allow(dead_code)]
 impl PciBus {
-    pub fn new(ioports: &mut IoPortAllocator) -> Result<Self, Error> {
+    pub(super) fn new(ioports: &mut IoPortAllocator) -> Result<Self, Error> {
         ioports.register_read_write(PCI_CONFIG_ADDRESS)?;
         ioports.register_read_write(PCI_CONFIG_ADDRESS + 1)?;
         ioports.register_read_write(PCI_CONFIG_ADDRESS + 2)?;

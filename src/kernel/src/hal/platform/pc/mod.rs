@@ -57,10 +57,7 @@ mod baremetal;
 mod qemu;
 
 #[cfg(feature = "pci")]
-mod pci;
-
-#[cfg(feature = "pci")]
-use pci::PciBus;
+pub mod pci;
 
 #[cfg(feature = "bios")]
 pub mod bios;
@@ -109,7 +106,7 @@ pub struct Platform {
     pub _pit: Pit,
     pub arch: Arch,
     #[cfg(feature = "pci")]
-    pub _pci: PciBus
+    pub _pci: pci::PciBus
 }
 
 //==================================================================================================
@@ -222,16 +219,39 @@ fn register_pit(ioports: &mut IoPortAllocator) -> Result<Pit, Error> {
 #[cfg(feature = "pci")]
 fn register_pci_devices(
     ioports: &mut IoPortAllocator,
-    _ioaddresses: &mut IoMemoryAllocator,
-    _mmio_regions: &mut LinkedList<TruncatedMemoryRegion<VirtualAddress>>,
-) -> Result<PciBus, Error> {
-    let mut pci = PciBus::new(ioports)?;
+    ioaddresses: &mut IoMemoryAllocator,
+    mmio_regions: &mut LinkedList<TruncatedMemoryRegion<VirtualAddress>>,
+) -> Result<pci::PciBus, Error> {
+    let mut pci = pci::PciBus::new(ioports)?;
+
+    let mut found_nic = false;
     
     for bus in 0..=255 {
         for slot in 0..32 {
             let vendor_device = pci.read_config(bus, slot, 0, 0x00);
-            if vendor_device != 0xFFFFFFFF {
-                trace!("DEVICE FOUND: {:#x}", vendor_device);
+            if !found_nic && vendor_device == 0x100E8086 {
+                found_nic = true;
+
+                info!("PCI: found e1000 at Bus {}, Slot {}", bus, slot);
+
+                let e1000_hardcoded_base: u32 = 0xFE800000;
+                pci.write_config(bus, slot, 0, 0x10, e1000_hardcoded_base);
+
+                let mut cmd = pci.read_config(bus, slot, 0, 0x04);
+                cmd |= 0x00000006;
+                pci.write_config(bus, slot, 0, 0x04, cmd);
+
+                let e1000_size: usize = 0x20000;
+                let region = TruncatedMemoryRegion::new(
+                    "e1000",
+                    PageAligned::from_raw_value(e1000_hardcoded_base as usize)?,
+                    e1000_size,
+                    MemoryRegionType::Mmio,
+                    AccessPermission::RDWR
+                )?;
+
+                ioaddresses.register(crate::hal::platform::region_tags::E1000_MMIO_TAG, region.clone())?;
+                mmio_regions.push_back(region);
             }
         }
     }
@@ -253,7 +273,6 @@ pub fn init(
         let raw_val = ::arch::io::in32(0xCFC);
         debug!("RAW PCI TEST: {:#x}", raw_val);
     }
-
 
     // Register I/O ports for 8259 PIC.
     ioports.register_read_write(pic::PIC_CTRL_MASTER as u16)?;
