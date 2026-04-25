@@ -225,6 +225,8 @@ fn register_pci_devices(
     let mut pci = pci::PciBus::new(ioports)?;
 
     let mut found_nic = false;
+
+    let bus: u8 = 0;
     
     for slot in 0..32 {
         // Always looking at bus 0, its unlikely to find the NIC
@@ -235,7 +237,7 @@ fn register_pci_devices(
         if !found_nic && vendor_device == 0x100E8086 {
             found_nic = true;
 
-            info!("PCI: found e1000 at Bus {}, Slot {}", bus, slot);
+            info!("PCI: found e1000 at Bus {bus}, Slot {slot}");
 
             // TODO: figure out the right way to define the base address
             let e1000_hardcoded_base: u32 = 0xFE800000;
