@@ -97,7 +97,7 @@ impl PciBus {
     {
         for offset_mul in 0..=15 {
             let offset: u32 = 0x4 * offset_mul;
-            let config_data = self.read_config(bus, slot, 0x0, offset);
+            let config_data = self.read_config(bus, slot, 0x0, offset as u8);
             debug!("{:02x}: {:08x}", offset_mul, config_data);
         }
     }
