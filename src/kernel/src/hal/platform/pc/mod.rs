@@ -265,6 +265,9 @@ fn register_pci_devices(
             ioaddresses.register(crate::hal::platform::region_tags::E1000_MMIO_TAG, region.clone())?;
             
             mmio_regions.push_back(region);
+
+            #[cfg(feature = "debug")]
+            pci.print_config(bus, slot);
         }
     }
 

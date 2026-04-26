@@ -92,4 +92,13 @@ impl PciBus {
         self.config_address.write32(address); 
         self.config_data.write32(value);
     }
+
+    pub fn print_config(&mut self, bus: u8, slot: u8)
+    {
+        for offset_mul in 0..=15 {
+            let offset: u32 = 0x4 * offset_mul;
+            let config_data = self.read_config(bus, slot, 0x0, offset);
+            debug!("{:02x}: {:08x}", offset_mul, config_data);
+        }
+    }
 }
