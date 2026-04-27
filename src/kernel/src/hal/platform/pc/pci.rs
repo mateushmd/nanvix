@@ -19,6 +19,13 @@ const FUNC_SHIFT: u32 = 8; // 10-8
 // that bits 0 and 1 must always be 0 
 const OFFSET_MASK: u32 = 0xFC; 
 
+#[repr(u8)]
+pub enum HeaderType0 {
+    DeviceVendor = 0x00,
+    StatusCommand = 0x04,
+    BAR0 = 0x10
+}
+
 ///
 /// Provides read and write operations for PMIO communication with the PCI
 ///

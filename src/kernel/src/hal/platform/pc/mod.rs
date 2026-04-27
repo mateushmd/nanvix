@@ -242,18 +242,29 @@ fn register_pci_devices(
             // TODO: figure out the right way to define the base address
             let e1000_hardcoded_base: u32 = 0xFE800000;
 
-            // For a header type 0x00 device, writing to offset 0x10
-            // sets the base address for BAR0 (register 0x5)
-            pci.write_config(bus, slot, 0, 0x10, e1000_hardcoded_base);
+            let e1000_size = {
+                // Writing 0xFFFFFFFF to BAR0 probes the hardware for the required memory size. 
+                // The NIC enforces a mask by hardwiring the bits that define the alignment 
+                // to zero. By clearing the PCI flags (bits 0-3) and calculating the 
+                // two's complement of this mask, we determine the address space size.
+                pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0, 0xFFFFFFFF);
+                let dirty_mask = pci.read_config(bus, slot, 0, pci::HeaderType0::BAR0);
+                let mask = dirty_mask & !0xF;
+                debug!("Returned mask is {:#x}", mask);
+                (!mask + 1) as usize
+            };
+
+            debug!("Size is {:#x}", e1000_size);
+
+            pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0, e1000_hardcoded_base);
 
             // Reads the Status and Command registers at offset 0x04,
             // sets bits 1 (Memory Space) and 2 (Bus Master) to 1
             // and write back
-            let mut cmd = pci.read_config(bus, slot, 0, 0x04);
+            let mut cmd = pci.read_config(bus, slot, 0, pci::HeaderType0::StatusCommand);
             cmd |= 0x00000006;
-            pci.write_config(bus, slot, 0, 0x04, cmd);
+            pci.write_config(bus, slot, 0, pci::HeaderType0::StatusCommand, cmd);
 
-            let e1000_size: usize = 0x20000;
             let region = TruncatedMemoryRegion::new(
                 "e1000",
                 PageAligned::from_raw_value(e1000_hardcoded_base as usize)?,
