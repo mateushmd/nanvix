@@ -247,8 +247,8 @@ fn register_pci_devices(
                 // The NIC enforces a mask by hardwiring the bits that define the alignment 
                 // to zero. By clearing the PCI flags (bits 0-3) and calculating the 
                 // two's complement of this mask, we determine the address space size.
-                pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0, 0xFFFFFFFF);
-                let dirty_mask = pci.read_config(bus, slot, 0, pci::HeaderType0::BAR0);
+                pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0 as u8, 0xFFFFFFFF);
+                let dirty_mask = pci.read_config(bus, slot, 0, pci::HeaderType0::BAR0 as u8);
                 let mask = dirty_mask & !0xF;
                 debug!("Returned mask is {:#x}", mask);
                 (!mask + 1) as usize
@@ -256,14 +256,14 @@ fn register_pci_devices(
 
             debug!("Size is {:#x}", e1000_size);
 
-            pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0, e1000_hardcoded_base);
+            pci.write_config(bus, slot, 0, pci::HeaderType0::BAR0 as u8, e1000_hardcoded_base);
 
             // Reads the Status and Command registers at offset 0x04,
             // sets bits 1 (Memory Space) and 2 (Bus Master) to 1
             // and write back
-            let mut cmd = pci.read_config(bus, slot, 0, pci::HeaderType0::StatusCommand);
+            let mut cmd = pci.read_config(bus, slot, 0, pci::HeaderType0::StatusCommand as u8);
             cmd |= 0x00000006;
-            pci.write_config(bus, slot, 0, pci::HeaderType0::StatusCommand, cmd);
+            pci.write_config(bus, slot, 0, pci::HeaderType0::StatusCommand as u8, cmd);
 
             let region = TruncatedMemoryRegion::new(
                 "e1000",

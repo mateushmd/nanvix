@@ -19,6 +19,7 @@ const FUNC_SHIFT: u32 = 8; // 10-8
 // that bits 0 and 1 must always be 0 
 const OFFSET_MASK: u32 = 0xFC; 
 
+#[allow(unused)]
 #[repr(u8)]
 pub enum HeaderType0 {
     DeviceVendor = 0x00,
