@@ -115,6 +115,7 @@ libc = "0.2.172"
 linuxd = { path = "src/daemons/linuxd", default-features = false }
 log = "0.4.27"
 nanvix = { path = "src/libs/nanvix", default-features = false }
+nanvix-net = { path = "src/libs/nanvix-net", default-features = false }
 nanvix-http = { path = "src/libs/nanvix-http", default-features = false }
 nanvix-registry = { path = "src/libs/nanvix-registry", default-features = false }
 nanvix-sandbox = { path = "src/libs/nanvix-sandbox", default-features = false }

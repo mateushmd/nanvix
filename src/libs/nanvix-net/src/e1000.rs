@@ -317,7 +317,7 @@ impl<K: KernelFunctions> E1000Device<K> {
         );
         self.write_reg(E1000_TIPG, 10 | (8 << 10) | (6 << 20));
         self.write_reg(E1000_TDBAL, self.tx_ring.dma_addr as u32);
-        self.write_reg(E1000_TDBAH, (self.tx_ring.dma_addr >> 32) as u32);
+        self.write_reg(E1000_TDBAH, self.tx_ring.dma_addr.wrapping_shr(32) as u32);
         self.write_reg(E1000_TDLEN, (TX_RING_SIZE * size_of::<TxDesc>()) as u32);
         self.write_reg(E1000_TDH, 0);
         self.write_reg(E1000_TDT, 0);
@@ -333,7 +333,7 @@ impl<K: KernelFunctions> E1000Device<K> {
         );
         self.write_reg(E1000_RFCTL, 0);
         self.write_reg(E1000_RDBAL, self.rx_ring.dma_addr as u32);
-        self.write_reg(E1000_RDBAH, (self.rx_ring.dma_addr >> 32) as u32);
+        self.write_reg(E1000_RDBAH, self.rx_ring.dma_addr.wrapping_shr(32) as u32);
         self.write_reg(E1000_RDLEN, (RX_RING_SIZE * size_of::<RxDesc>()) as u32);
         self.write_reg(E1000_RDH, 0);
         self.write_reg(E1000_RDT, (RX_RING_SIZE - 1) as u32);

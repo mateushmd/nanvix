@@ -11,10 +11,9 @@ pub fn pci_init(ecam : usize) {
     let mut found = false;
 
     // Look at each PCI device at bus 0
-    while (dev <= 0b20 && !found) {
-
-        let off: u32 = (dev << 11);
-        let base = off + ecam;
+    while dev <= 0x20 && !found {
+        let off: u32 = dev << 11;
+        let base = off as usize + ecam;
         let pci_base = (base + off as usize) as *mut Volatile<u32>;
         let device_id = unsafe {
             (*pci_base).read()
@@ -23,7 +22,7 @@ pub fn pci_init(ecam : usize) {
         // E1000 ID = 100e8086
         if device_id == 0x100e8086 {
             let pci_config = unsafe { 
-                from_raw_parts_mut(base as *mut Volatile<u32>, (0xff >> 2))
+                from_raw_parts_mut(base as *mut Volatile<u32>, 0xff >> 2)
             };
 
             // Enable I/O access, memory access, mastering

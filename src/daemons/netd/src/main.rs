@@ -4,8 +4,8 @@
 extern crate libc_string;
 extern crate nvx;
 
-use ::sys::sys::kcall::mm;
-use ::sys::sys::mm::MmioRegionInfo;
+use ::sys::kcall::mm;
+use ::sys::mm::MmioRegionInfo;
 use ::nanvix_net::E1000Device;
 use ::nanvix_net::e1000_for_nanvix::NanvixKernelFunctions;
 use ::syslog;
@@ -26,7 +26,7 @@ pub fn main() {
         Err(e) => panic!("failed to query mmio info: {:?}", e),
     };
     
-    let mapped_regs = info.base() as usize;
+    let mapped_regs = usize::from(info.base());
 
     syslog::info!("e1000 mmio mapped at {:#x}", mapped_regs);
 

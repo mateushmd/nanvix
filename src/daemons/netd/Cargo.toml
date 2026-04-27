@@ -13,5 +13,14 @@ nvx = { workspace = true }
 sys = { workspace = true }
 syslog = { workspace = true }
 
+[features]
+# Logging Features
+trace = ["debug"]
+debug = ["info"]
+info = ["warn"]
+warn = ["error"]
+error = ["panic"]
+panic = []
+
 [lints]
 workspace = true
