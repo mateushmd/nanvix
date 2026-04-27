@@ -5,7 +5,7 @@ use crate::e1000::KernelFunctions;
 
 const E1000_MMIO_TAG: u64 = u64::from_be_bytes(*b"E1000   ");
 
-struct NanvixKernelFunctions;
+pub struct NanvixKernelFunctions;
 
 impl KernelFunctions for NanvixKernelFunctions {
 	fn dma_alloc(&mut self, pages: usize) -> (usize, usize) {

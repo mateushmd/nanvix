@@ -143,6 +143,13 @@ expected_output = "ok"
 
 [[tests]]
 executor = "http"
+program = "./bin/netd.elf"
+input = "[]"
+expect_empty_output = true
+expected_exit_code = 0
+
+[[tests]]
+executor = "http"
 program = "./bin/wasmd.elf"
 input = '["hello world!"]'
 expected_output = "Hello, world!"
