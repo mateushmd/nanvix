@@ -17,7 +17,7 @@ pub fn main() {
         Ok(pid) => pid,
         Err(e) => panic!("failed to get pid (error={:?})", e),
     };
-    let myname: &str = "netd";
+    let _myname: &str = "netd";
 
     ::syslog::info!("running network daemon (pid={:?})...", mypid);
 
