@@ -15,12 +15,16 @@ syslog = { workspace = true }
 
 [features]
 # Logging Features
-trace = ["debug"]
-debug = ["info"]
-info = ["warn"]
-warn = ["error"]
-error = ["panic"]
-panic = []
+trace = ["nvx/trace", "syslog/trace"]
+debug = ["nvx/debug", "syslog/debug"]
+info = ["nvx/info", "syslog/info"]
+warn = ["nvx/warn", "syslog/warn"]
+error = ["nvx/error", "syslog/error"]
+panic = ["nvx/panic", "syslog/panic"]
+
+[build-dependencies]
+cc = { worksace = true }
+cfg-if = { workspace = true }
 
 [lints]
 workspace = true
