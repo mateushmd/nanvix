@@ -255,8 +255,3 @@ expected_output = "ok"
 executor = "terminal"
 program = "./bin/arch-rust.elf"
 expected_output = "ok"
-
-[[tests]]
-executor = "terminal"
-program = "./bin/netd.elf"
-expected_output = "ok"

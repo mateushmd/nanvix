@@ -8,11 +8,18 @@ use ::sys::kcall::mm;
 use ::sys::mm::MmioRegionInfo;
 use ::nanvix_net::E1000Device;
 use ::nanvix_net::e1000_for_nanvix::NanvixKernelFunctions;
+use sys::pm::ProcessIdentifier;
 use ::syslog;
 
 #[unsafe(no_mangle)]
 pub fn main() {
-    syslog::info!("netd starting...");
+    let mypid: ProcessIdentifier = match ::sys::kcall::pm::getpid() {
+        Ok(pid) => pid,
+        Err(e) => panic!("failed to get pid (error={:?})", e),
+    };
+    let myname: &str = "netd";
+
+    ::syslog::info!("running network daemon (pid={:?})...", mypid);
 
     let e1000_mmio_tag = u64::from_be_bytes(*b"E1000   ");
 
