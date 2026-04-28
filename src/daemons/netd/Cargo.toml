@@ -23,7 +23,7 @@ error = ["nvx/error", "syslog/error"]
 panic = ["nvx/panic", "syslog/panic"]
 
 [build-dependencies]
-cc = { worksace = true }
+cc = { workspace = true }
 cfg-if = { workspace = true }
 
 [lints]

@@ -26,7 +26,7 @@ pub fn main() {
         Err(e) => panic!("failed to query mmio info: {:?}", e),
     };
     
-    let mapped_regs = info.base() as usize;
+    let mapped_regs = usize::from(info.base());
 
     syslog::info!("e1000 mmio mapped at {:#x}", mapped_regs);
 
