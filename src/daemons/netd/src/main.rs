@@ -21,6 +21,12 @@ pub fn main() {
 
     ::syslog::info!("running network daemon (pid={:?})...", mypid);
 
+    if let Err(e) = ::sys::kcall::pm::capctl(::sys::pm::Capability::IoManagement, true) {
+        panic!(
+            "!failed to acquire I/O management capability (error={:?})", e
+        );
+    }
+
     let e1000_mmio_tag = u64::from_be_bytes(*b"E1000   ");
 
     syslog::info!("allocating e1000 mmio...");
