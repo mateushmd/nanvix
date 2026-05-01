@@ -154,7 +154,9 @@ impl FrameAllocator {
         match self.bitmap.set(frame_number) {
             Ok(()) => Ok(()),
             Err(error) => {
-                error!("{error:?} (phys_addr={phys_addr:?})");
+                if error.code != ErrorCode::InvalidArgument {
+                    error!("{error:?} (phys_addr={phys_addr:?})");
+                }
                 Err(error)
             },
         }
