@@ -1842,9 +1842,18 @@ impl ProcessManager {
         let mut process: ProcessRefMut = self.find_process_mut(pid)?;
         let state: &mut ProcessState = process.state_mut();
 
-        // TODO: change page permissions.
         let vmem: &mut Vmem = state.vmem_mut();
-        vmem.kctrl(region.base(), region.perm())?;
+        
+        let base_raw = region.base().into_raw_value();
+        let size = region.size();
+        let perm = region.perm();
+        
+        for offset in (0..size).step_by(PAGE_SIZE) {
+            let vaddr_raw = base_raw + offset;
+            let vaddr = PageAligned::from_raw_value(vaddr_raw)?;
+            let paddr = crate::hal::mem::FrameAddress::from_raw_value(vaddr_raw)?;
+            vmem.map_mmio(vaddr, paddr, perm)?;
+        }
 
         state.add_mmio(region);
 

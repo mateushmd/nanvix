@@ -1172,6 +1172,31 @@ impl Vmem {
     }
 
     // Changes access permissions on a kernel page.
+    pub fn map_mmio(
+        &mut self,
+        vaddr: PageAligned<VirtualAddress>,
+        paddr: FrameAddress,
+        access: AccessPermission,
+    ) -> Result<(), Error> {
+        trace!("{vaddr:?}");
+        let page_table = {
+            let pgtab_vaddr: PageTableAligned<VirtualAddress> = PageTableAligned::from_raw_value(
+                ::sys::mm::align_down(vaddr.into_raw_value(), PGTAB_ALIGNMENT),
+            )?;
+            let pde: PageDirectoryEntry = match self.pgdir.read_pde(PageTableAddress::new(pgtab_vaddr)) {
+                Some(pde) => pde,
+                None => return Err(Error::new(ErrorCode::TryAgain, "failed to read page directory entry")),
+            };
+            if !pde.is_present() {
+                return Err(Error::new(ErrorCode::NoSuchEntry, "page table not present"));
+            }
+            self.lookup_kernel_page_table(&pde)?
+        };
+        let page_address: PageAddress = PageAddress::new(vaddr);
+        page_table.borrow_mut().1.map(page_address, paddr, false, false, false, access)?;
+        Ok(())
+    }
+
     pub fn kctrl(
         &mut self,
         vaddr: PageAligned<VirtualAddress>,
