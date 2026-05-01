@@ -1851,9 +1851,7 @@ impl ProcessManager {
         for offset in (0..size).step_by(PAGE_SIZE) {
             let vaddr_raw = base_raw + offset;
             let vaddr = PageAligned::from_raw_value(vaddr_raw)?;
-            let paddr_phys = unsafe { crate::hal::mem::PhysicalAddress::from_mmio_address(crate::hal::mem::VirtualAddress::from_raw_value(vaddr_raw))? };
-            let paddr = crate::hal::mem::FrameAddress::new(PageAligned::from_address(paddr_phys)?);
-            vmem.map_mmio(vaddr, paddr, perm)?;
+            vmem.kctrl(vaddr, perm)?;
         }
 
         state.add_mmio(region);
