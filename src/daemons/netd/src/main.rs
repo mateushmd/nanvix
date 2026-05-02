@@ -43,6 +43,19 @@ pub fn main() {
 
     syslog::info!("e1000 mmio mapped at {:#x}", mapped_regs);
 
+    syslog::info!("testing dma allocation...");
+    let test_vaddr = ::sys::mm::VirtualAddress::from_raw_value(0x6000_0000);
+    match mm::dma_alloc(test_vaddr, 1) {
+        Ok(paddr) => {
+            syslog::info!("dma allocation successful: vaddr={:#x}, paddr={:#x}", test_vaddr.into_raw_value(), paddr);
+            if let Err(e) = mm::dma_free(test_vaddr, 1) {
+                panic!("failed to free dma memory: {:?}", e);
+            }
+            syslog::info!("dma memory freed successfully!");
+        }
+        Err(e) => panic!("failed to allocate dma memory: {:?}", e),
+    }
+
     syslog::info!("initializing e1000 device...");
     let _device = match E1000Device::new(NanvixKernelFunctions, mapped_regs) {
         Ok(d) => d,

@@ -5,8 +5,10 @@
 // Modules
 //==================================================================================================
 
+mod alloc_dma;
 mod capctl;
 mod create_thread;
+mod free_dma;
 mod get_thread_data_area;
 mod gettime;
 mod join_thread;
@@ -26,8 +28,10 @@ mod wait_cond;
 // Exports
 //==================================================================================================
 
+pub use alloc_dma::alloc_dma;
 pub use capctl::capctl;
 pub use create_thread::create_thread;
+pub use free_dma::free_dma;
 pub use get_thread_data_area::get_thread_data_area;
 pub use gettime::gettime;
 pub use join_thread::join_thread;

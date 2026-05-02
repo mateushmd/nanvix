@@ -273,6 +273,37 @@ impl VirtMemoryManager {
         self.physman.borrow_mut().free_user_frame(uframe)
     }
 
+    pub fn alloc_contiguous_upages(
+        &mut self,
+        vmem: &mut Vmem,
+        mut vaddr: PageAligned<VirtualAddress>,
+        nframes: usize,
+        access: AccessPermission,
+    ) -> Result<PhysicalAddress, Error> {
+        trace!("vaddr={:?}, nframes={}", vaddr, nframes);
+        if nframes == 0 { return Err(Error::new(ErrorCode::InvalidArgument, "nframes is 0")); }
+        let physman: Rc<RefCell<PhysMemoryManager>> = self.physman.clone();
+        let page_table_allocator = move || {
+            let kframe: KernelFrame = match physman.try_borrow_mut() {
+                Ok(mut physman) => physman.alloc_kernel_frame(true)?,
+                Err(_) => return Err(Error::new(ErrorCode::ResourceBusy, "failed to borrow physical memory manager")),
+            };
+            let kpage: KernelPage = KernelPage::new(kframe);
+            let pgtable_storage: PageTableStorage = PageTableStorage::KernelPage(kpage);
+            Ok(PageTable::new(pgtable_storage))
+        };
+        let uframes: Vec<UserFrame> = match self.physman.try_borrow_mut() {
+            Ok(mut physman) => physman.alloc_contiguous_user_frames(nframes)?,
+            Err(_) => return Err(Error::new(ErrorCode::ResourceBusy, "failed to borrow physical memory manager")),
+        };
+        let paddr: PhysicalAddress = PhysicalAddress::from_frame_address(uframes[0].address());
+        for uframe in uframes {
+            vmem.map(uframe, vaddr, access, &page_table_allocator)?;
+            vaddr = PageAligned::from_raw_value(vaddr.into_raw_value() + mem::PAGE_SIZE)?;
+        }
+        Ok(paddr)
+    }
+
     pub fn alloc_upages(
         &mut self,
         vmem: &mut Vmem,

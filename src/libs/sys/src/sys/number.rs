@@ -83,6 +83,8 @@ pub enum KcallNumber {
     Push = KcallNumber::NR_PUSH_SYSCALL,
     /// Initiates a rendezvous receive transfer.
     Pull = KcallNumber::NR_PULL_SYSCALL,
+    AllocDma = KcallNumber::NR_ALLOC_DMA_SYSCALL,
+    FreeDma = KcallNumber::NR_FREE_DMA_SYSCALL,
     /// Invalid kernel call.
     Invalid = KcallNumber::NR_INVALID_SYSCALL,
 }
@@ -124,6 +126,8 @@ impl KcallNumber {
     // NOTE: number 32 is already used by NR_MMIO_INFO_SYSCALL (assigned out of order above).
     const NR_PUSH_SYSCALL: u32 = 33;
     const NR_PULL_SYSCALL: u32 = 34;
+    const NR_ALLOC_DMA_SYSCALL: u32 = 35;
+    const NR_FREE_DMA_SYSCALL: u32 = 36;
     const NR_INVALID_SYSCALL: u32 = u32::MAX;
 }
 
@@ -210,6 +214,8 @@ impl From<KcallNumber> for u32 {
             KcallNumber::GetThreadDataArea => KcallNumber::NR_GET_TDA_SYSCALL,
             KcallNumber::Push => KcallNumber::NR_PUSH_SYSCALL,
             KcallNumber::Pull => KcallNumber::NR_PULL_SYSCALL,
+            KcallNumber::AllocDma => KcallNumber::NR_ALLOC_DMA_SYSCALL,
+            KcallNumber::FreeDma => KcallNumber::NR_FREE_DMA_SYSCALL,
             KcallNumber::Invalid => KcallNumber::NR_INVALID_SYSCALL,
         }
     }

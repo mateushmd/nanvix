@@ -94,6 +94,39 @@ pub fn mprotect(
 }
 
 //==================================================================================================
+// DMA Region
+//==================================================================================================
+
+/// Allocates a contiguous DMA region and maps it to the given virtual address.
+pub fn dma_alloc(vaddr: VirtualAddress, nframes: usize) -> Result<usize, Error> {
+    let result: i64 = kcall2!(
+        KcallNumber::AllocDma.into(),
+        vaddr.into_raw_value() as u32,
+        nframes as u32
+    );
+
+    if result >= 0 {
+        Ok(result as usize)
+    } else {
+        Err(Error::new(ErrorCode::try_from(result)?, "failed to allocate dma region"))
+    }
+}
+
+pub fn dma_free(vaddr: VirtualAddress, nframes: usize) -> Result<(), Error> {
+    let result: i64 = kcall2!(
+        KcallNumber::FreeDma.into(),
+        vaddr.into_raw_value() as u32,
+        nframes as u32
+    );
+
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(Error::new(ErrorCode::try_from(result)?, "failed to free dma region"))
+    }
+}
+
+//==================================================================================================
 // Allocate MMIO Region
 //==================================================================================================
 

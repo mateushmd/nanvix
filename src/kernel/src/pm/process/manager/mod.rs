@@ -1822,6 +1822,36 @@ impl ProcessManager {
         mm.unmap_upage(vmem, vaddr)
     }
 
+    pub fn alloc_dma(
+        &mut self,
+        mm: &mut VirtMemoryManager,
+        pid: ProcessIdentifier,
+        vaddr: PageAligned<VirtualAddress>,
+        nframes: usize,
+        access: AccessPermission,
+    ) -> Result<crate::hal::mem::PhysicalAddress, Error> {
+        let mut process: ProcessRefMut = self.find_process_mut(pid)?;
+        let vmem: &mut Vmem = process.state_mut().vmem_mut();
+        mm.alloc_contiguous_upages(vmem, vaddr, nframes, access)
+    }
+
+    pub fn free_dma(
+        &mut self,
+        mm: &mut VirtMemoryManager,
+        pid: ProcessIdentifier,
+        vaddr: PageAligned<VirtualAddress>,
+        nframes: usize,
+    ) -> Result<(), Error> {
+        let mut process: ProcessRefMut = self.find_process_mut(pid)?;
+        let vmem: &mut Vmem = process.state_mut().vmem_mut();
+        let mut cur_vaddr = vaddr;
+        for _ in 0..nframes {
+            mm.unmap_upage(vmem, cur_vaddr)?;
+            cur_vaddr = PageAligned::from_raw_value(cur_vaddr.into_raw_value() + PAGE_SIZE)?;
+        }
+        Ok(())
+    }
+
     pub fn mctrl(
         &mut self,
         mm: &mut VirtMemoryManager,

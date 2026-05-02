@@ -85,6 +85,23 @@ impl FrameAllocator {
     /// Upon success, the index of the allocated frame is returned. Upon failure, an error is
     /// returned instead.
     ///
+    pub fn alloc_contiguous(&mut self, nframes: usize) -> Result<Vec<FrameAddress>, Error> {
+        let frame_number: usize = match self.bitmap.alloc_range(nframes) {
+            Ok(frame_number) => frame_number,
+            Err(error) => {
+                error!("{error:?}");
+                return Err(error);
+            },
+        };
+        let mut frames: Vec<FrameAddress> = Vec::new();
+        for i in 0..nframes {
+            let num = FrameNumber::from_raw_value(frame_number + i)
+                .ok_or_else(|| Error::new(ErrorCode::OutOfMemory, "frame number is out of bounds"))?;
+            frames.push(FrameAddress::from_frame_number(num)?);
+        }
+        Ok(frames)
+    }
+
     pub fn alloc(&mut self) -> Result<FrameAddress, Error> {
         let frame_number: usize = match self.bitmap.alloc() {
             Ok(frame_number) => frame_number,

@@ -93,6 +93,9 @@ pub extern "C" fn do_kcall(number: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u
         // Handle `mmio_free()` locally.
         KcallNumber::FreeMmio => io::mmio_free(pid, arg0, arg1),
         // Handle `mmio_alloc()` locally.
+        KcallNumber::AllocDma => pm::alloc_dma(pid, arg0),
+        KcallNumber::FreeDma => pm::free_dma(pid, arg0, arg1),
+
         KcallNumber::AllocMmio => io::mmio_alloc(pid, arg0, arg1),
         // Handle `mmio_info()` locally.
         KcallNumber::MmioInfo => io::mmio_info(pid, arg0, arg1, arg2),

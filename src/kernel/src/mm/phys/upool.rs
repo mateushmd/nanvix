@@ -76,6 +76,10 @@ impl UpoolInner {
     ///
     /// Upon success, a vector of physical addresses is returned. Upon failure, an error is returned
     /// instead.
+    fn alloc_contiguous(&mut self, size: usize) -> Result<Vec<FrameAddress>, Error> {
+        self.frame_allocator.alloc_contiguous(size)
+    }
+
     fn alloc_many(&mut self, size: usize) -> Result<Vec<FrameAddress>, Error> {
         let mut pages: Vec<FrameAddress> = Vec::new();
 
@@ -202,6 +206,22 @@ impl Upool {
         let addr: FrameAddress = self.inner.borrow_mut().alloc()?;
         let uframe: UserFrame = UserFrame::new(addr);
         Ok(uframe)
+    }
+
+    fn alloc_contiguous(&mut self, size: usize) -> Result<Vec<FrameAddress>, Error> {
+        self.frame_allocator.alloc_contiguous(size)
+    }
+
+    pub fn alloc_contiguous(&mut self, nframes: usize) -> Result<Vec<UserFrame>, Error> {
+        trace!("nframes={nframes:?}");
+        let mut uframes: Vec<FrameAddress> = self.inner.borrow_mut().alloc_contiguous(nframes)?;
+        let mut upages: Vec<UserFrame> = Vec::new();
+        while let Some(page) = uframes.pop() {
+            let upage: UserFrame = UserFrame::new(page);
+            upages.push(upage);
+        }
+        upages.reverse();
+        Ok(upages)
     }
 
     pub fn alloc_many(&mut self, nframes: usize) -> Result<Vec<UserFrame>, Error> {
