@@ -170,6 +170,8 @@ impl From<u32> for KcallNumber {
             Self::NR_GET_TDA_SYSCALL => KcallNumber::GetThreadDataArea,
             Self::NR_PUSH_SYSCALL => KcallNumber::Push,
             Self::NR_PULL_SYSCALL => KcallNumber::Pull,
+            Self::NR_ALLOC_DMA_SYSCALL => KcallNumber::AllocDma,
+            Self::NR_FREE_DMA_SYSCALL => KcallNumber::FreeDma,
             _ => KcallNumber::Invalid,
         }
     }

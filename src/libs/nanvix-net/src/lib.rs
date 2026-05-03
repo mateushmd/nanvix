@@ -5,7 +5,6 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
-pub mod pci_kernel;
 pub mod e1000_for_nanvix;
 pub mod e1000;
 

@@ -298,7 +298,7 @@ impl VirtMemoryManager {
         };
         let paddr: PhysicalAddress = PhysicalAddress::from_frame_address(uframes[0].address());
         for uframe in uframes {
-            vmem.map(uframe, vaddr, access, &page_table_allocator)?;
+            vmem.map_dma(uframe, vaddr, access, &page_table_allocator)?;
             vaddr = PageAligned::from_raw_value(vaddr.into_raw_value() + mem::PAGE_SIZE)?;
         }
         Ok(paddr)

@@ -143,7 +143,7 @@ sha2 = "0.10.8"
 shell-words = "1.1"
 signal-hook = "0.4.1"
 slab = { path = "src/libs/slab", default-features = false }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", branch = "main", default-features = false, features = ["alloc", "log", "proto-ipv4", "socket-tcp", "socket-udp"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", branch = "main", default-features = false, features = ["alloc", "log", "proto-ipv4", "socket-tcp", "socket-udp", "socket-icmp"] }
 spin = { git = "https://github.com/nanvix/spin-rs", package = "spin", branch = "nanvix/v0.10.0", default-features = false }
 static_assert = { path = "src/libs/static_assert", default-features = false }
 libc_stdlib = { path = "src/libs/libc_stdlib", default-features = false }

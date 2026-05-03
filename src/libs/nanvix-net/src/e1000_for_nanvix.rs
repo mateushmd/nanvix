@@ -17,7 +17,10 @@ impl KernelFunctions for NanvixKernelFunctions {
 
 		match mm::dma_alloc(vaddr, pages) {
 			Ok(paddr) => (vaddr_raw, paddr),
-			Err(_) => (0, 0),
+			Err(e) => {
+				::syslog::error!("dma_alloc failed: {:?}", e);
+				(0, 0)
+			},
 		}
 	}
 
