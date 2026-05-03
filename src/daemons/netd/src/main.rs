@@ -78,8 +78,8 @@ pub fn main() {
     syslog::info!("e1000 device initialized successfully! MAC: {}", device.hardware_addr());
     
     use ::smoltcp::iface::{Config, Interface, SocketSet};
-    use ::smoltcp::socket::icmp::{Socket as IcmpSocket, PacketBuffer as IcmpPacketBuffer};
-    use ::smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, Ipv4Address};
+    use ::smoltcp::socket::udp::{Socket as UdpSocket, PacketBuffer as UdpPacketBuffer, PacketMetadata as UdpPacketMetadata};
+    use ::smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, IpListenEndpoint, Ipv4Address};
     use ::smoltcp::time::Instant;
 
     let mac_addr = device.hardware_addr();
@@ -94,12 +94,18 @@ pub fn main() {
     });
 
     let mut sockets = SocketSet::new(alloc::vec![]);
-    let icmp_rx_buffer = IcmpPacketBuffer::new(alloc::vec![smoltcp::socket::icmp::PacketMetadata::EMPTY; 1], alloc::vec![0; 256]);
-    let icmp_tx_buffer = IcmpPacketBuffer::new(alloc::vec![smoltcp::socket::icmp::PacketMetadata::EMPTY; 1], alloc::vec![0; 256]);
-    let icmp_socket = IcmpSocket::new(icmp_rx_buffer, icmp_tx_buffer);
-    sockets.add(icmp_socket);
+    let udp_rx_buffer = UdpPacketBuffer::new(alloc::vec![UdpPacketMetadata::EMPTY; 10], alloc::vec![0; 1024]);
+    let udp_tx_buffer = UdpPacketBuffer::new(alloc::vec![UdpPacketMetadata::EMPTY; 10], alloc::vec![0; 1024]);
+    let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+    
+    // Bind the socket to port 5555
+    if let Err(e) = udp_socket.bind(5555) {
+        panic!("failed to bind udp socket to port 5555: {:?}", e);
+    }
+    
+    let udp_handle = sockets.add(udp_socket);
 
-    syslog::info!("starting network event loop");
+    syslog::info!("starting network event loop (listening on UDP 5555)");
 
     loop {
         let timestamp = {
@@ -111,6 +117,14 @@ pub fn main() {
         };
 
         iface.poll(timestamp, &mut device, &mut sockets);
+
+        // Process UDP packets
+        let socket = sockets.get_mut::<UdpSocket>(udp_handle);
+        if socket.can_recv() {
+            if let Ok((data, meta)) = socket.recv() {
+                syslog::info!("received UDP packet from {}: {}", meta.endpoint, core::str::from_utf8(data).unwrap_or("<invalid utf8>"));
+            }
+        }
 
         // Sleep to yield CPU
         let _ = ::sys::kcall::pm::sleep(0, 10_000_000); // 10ms

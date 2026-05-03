@@ -69,7 +69,7 @@ function run_qemu
 	local mode=$4       # Spawn mode (run or debug).
 	local timeout=$5    # Timeout for test mode.
 	local GDB_PORT=1234 # GDB port used for debugging.
-	local nic="-nic model=e1000"
+	local nic="-nic user,model=e1000,hostfwd=udp::5555-:5555"
 	local cmd=""
 
 	# Check if the target is unsupported.
