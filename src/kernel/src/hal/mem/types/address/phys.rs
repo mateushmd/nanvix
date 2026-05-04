@@ -116,12 +116,7 @@ impl PhysicalAddress {
     /// A [`PhysicalAddress`] associated with the given `frame_addr`.
     ///
     pub fn from_frame_address(frame_addr: FrameAddress) -> Self {
-        let raw_addr: usize = frame_addr.into_raw_value() << mem::FRAME_SHIFT;
-        Self(VirtualAddress::new(raw_addr))
-    }
-
-    pub fn from_into_frame_address(frame_addr: FrameAddress) -> Self {
-        let raw_addr: usize = frame_addr.into_raw_value() << mem::FRAME_SHIFT;
+        let raw_addr: usize = frame_addr.into_raw_value();
         Self(VirtualAddress::new(raw_addr))
     }
 }
