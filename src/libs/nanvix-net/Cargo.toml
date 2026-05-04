@@ -12,11 +12,20 @@ crate-type = ["lib"]
 [features]
 default = []
 syscall-time = ["dep:syscall"]
+# Logging Features
+trace = ["nvx/trace", "syslog/trace"]
+debug = ["nvx/debug", "syslog/debug"]
+info = ["nvx/info", "syslog/info"]
+warn = ["nvx/warn", "syslog/warn"]
+error = ["nvx/error", "syslog/error"]
+panic = ["nvx/panic", "syslog/panic"]
 
 [dependencies]
+nvx = { workspace = true }
 smoltcp = { workspace = true, features = ["medium-ethernet"] }
 syscall = { workspace = true, optional = true, features = ["syscall"] }
 sys = { workspace = true }
+syslog = { workspace = true }
 volatile = { workspace = true }
 
 [lints]

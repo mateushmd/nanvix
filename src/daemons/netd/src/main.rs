@@ -5,12 +5,15 @@ extern crate alloc;
 extern crate libc_string;
 extern crate nvx;
 
-use ::sys::kcall::{ 
-    mm,
-    pm
-};
 use ::sys::{ 
-    mm::MmioRegionInfo,
+    kcall:: {
+        mm,
+        pm
+    },
+    mm::{
+        Address,
+        MmioRegionInfo
+    },
     pm::ProcessIdentifier
 };
 use ::nanvix_net::E1000Device;
@@ -22,7 +25,7 @@ fn init() -> ProcessIdentifier {
         Err(e) => panic!("failed to get pid (error={:?})", e),
     };
 
-    if let Err(e) = pm::capctl(pm::Capability::IoManagement, true) {
+    if let Err(e) = pm::capctl(::sys::pm::Capability::IoManagement, true) {
         panic!("failed to acquire I/O management capability (error={:?})", e);
     };
 
@@ -50,7 +53,7 @@ fn init_e1000() -> MmioRegionInfo {
 
 #[unsafe(no_mangle)]
 pub fn main() {
-    let mypid = init();
+    let _mypid = init();
 
     let info = init_e1000();
     
@@ -79,7 +82,7 @@ pub fn main() {
     
     use ::smoltcp::iface::{Config, Interface, SocketSet};
     use ::smoltcp::socket::udp::{Socket as UdpSocket, PacketBuffer as UdpPacketBuffer, PacketMetadata as UdpPacketMetadata};
-    use ::smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, IpListenEndpoint, Ipv4Address};
+    use ::smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
     use ::smoltcp::time::Instant;
 
     let mac_addr = device.hardware_addr();
@@ -109,14 +112,19 @@ pub fn main() {
 
     loop {
         let timestamp = {
-            let mut sec: u64 = 0;
-            let mut nsec: u64 = 0;
-            let _ = ::sys::kcall::pm::gettime(&mut sec, &mut nsec);
-            let millis = sec * 1000 + nsec / 1_000_000;
-            Instant::from_millis(millis as i64)
+            let mut time = match ::sys::time::SystemTime::new(0, 0){
+                Some(t) => t,
+                None => unreachable!(),
+            };
+            if let Err(e) = ::sys::kcall::pm::gettime(&mut time) {
+                panic!("failed to get current system time: {:?}", e);
+            }
+            time
         };
 
-        iface.poll(timestamp, &mut device, &mut sockets);
+        let millis = Instant::from_millis((timestamp.seconds() * 1000 + (timestamp.nanoseconds() as u64) / 1_000_000) as i64);
+
+        iface.poll(millis, &mut device, &mut sockets);
 
         // Process UDP packets
         let socket = sockets.get_mut::<UdpSocket>(udp_handle);
@@ -127,6 +135,6 @@ pub fn main() {
         }
 
         // Sleep to yield CPU
-        let _ = ::sys::kcall::pm::sleep(0, 10_000_000); // 10ms
+        let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(10)); // 10ms
     }
 }

@@ -31,6 +31,7 @@ use crate::{
             vmem::Vmem,
             PageTableStorage,
         },
+        PhysicalAddress
     },
 };
 use ::alloc::{

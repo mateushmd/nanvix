@@ -352,7 +352,7 @@ impl Vmem {
                 self.user_page_tables.push_back((pgtable_vaddr, page_table));
 
                 // Get the corresponding page directory entry.
-                pde = match self.pgdir.read_pde(PageTableAddress::new(vaddr.into_inner())) {
+                pde = match self.pgdir.read_pde(PageTableAddress::new(vaddr)) {
                     Some(pde) => pde,
                     None => unreachable!("failed to read page directory entry"),
                 };

@@ -1,6 +1,7 @@
 #![no_std]
 
 extern crate alloc;
+extern crate nvx;
 
 #[cfg(test)]
 extern crate std;

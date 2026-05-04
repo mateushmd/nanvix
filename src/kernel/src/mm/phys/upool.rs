@@ -208,9 +208,11 @@ impl Upool {
         Ok(uframe)
     }
 
-    fn alloc_contiguous(&mut self, size: usize) -> Result<Vec<FrameAddress>, Error> {
+    /*
+    fn alloc_contiguous_frames(&mut self, size: usize) -> Result<Vec<FrameAddress>, Error> {
         self.frame_allocator.alloc_contiguous(size)
     }
+    */
 
     pub fn alloc_contiguous(&mut self, nframes: usize) -> Result<Vec<UserFrame>, Error> {
         trace!("nframes={nframes:?}");

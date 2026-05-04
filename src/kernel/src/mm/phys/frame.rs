@@ -17,6 +17,7 @@ use crate::{
         TruncatedMemoryRegion,
     },
 };
+use ::alloc::vec::Vec;
 use ::arch::mem::{
     self,
     paging::FrameNumber,
