@@ -124,13 +124,23 @@ pub fn main() {
 
         let millis = Instant::from_millis((timestamp.seconds() * 1000 + (timestamp.nanoseconds() as u64) / 1_000_000) as i64);
 
-        iface.poll(millis, &mut device, &mut sockets);
+        let _poll_res = iface.poll(millis, &mut device, &mut sockets);
 
         // Process UDP packets
         let socket = sockets.get_mut::<UdpSocket>(udp_handle);
         if socket.can_recv() {
             if let Ok((data, meta)) = socket.recv() {
                 syslog::info!("received UDP packet from {}: {}", meta.endpoint, core::str::from_utf8(data).unwrap_or("<invalid utf8>"));
+                
+                // Echo it back
+                if socket.can_send() {
+                    let reply = b"Packet Received!";
+                    if let Err(e) = socket.send_slice(reply, meta.endpoint) {
+                        syslog::error!("failed to send UDP reply: {:?}", e);
+                    } else {
+                        syslog::info!("UDP reply sent.");
+                    }
+                }
             }
         }
 
