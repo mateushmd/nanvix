@@ -197,6 +197,18 @@ impl<K: KernelFunctions> E1000Device<K> {
         self.write_reg(E1000_CTL, ctl | E1000_CTL_RST);
         self.write_flush();
 
+        // Wait for reset to complete
+        for _ in 0..100000 {
+            if self.read_reg(E1000_CTL) & E1000_CTL_RST == 0 {
+                break;
+            }
+        }
+
+        // Give it a little more time to settle
+        for _ in 0..100000 {
+            ::core::hint::spin_loop();
+        }
+
         self.write_reg(E1000_CTL, self.read_reg(E1000_CTL) | E1000_CTL_SLU);
         self.init_tx();
         self.init_rx();
