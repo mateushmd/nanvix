@@ -283,6 +283,10 @@ impl<K: KernelFunctions> E1000Device<K> {
             descriptor.errors = 0;
             descriptor.special = 0;
 
+            if frame.is_some() {
+                ::syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
+            }
+
             frame
         };
 
