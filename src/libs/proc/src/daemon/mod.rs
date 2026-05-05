@@ -138,10 +138,7 @@ impl ProcessDaemon {
         if let Some((name, _identity)) = self.processes.remove(&pid) {
             ::syslog::info!("deregistering process (pid={:?}, name={:?}", pid, name,);
 
-            if name == "testd" {
-                return Ok(true);
-            }
-            if name == "netd" && !self.processes.values().any(|(n, _)| n == "testd") {
+            if name == "netd" {
                 return Ok(true);
             }
         }
