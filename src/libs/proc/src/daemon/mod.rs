@@ -56,9 +56,6 @@ pub struct ProcessDaemon {
 }
 
 impl ProcessDaemon {
-    // TODO: Change this, once we rename testd to initd.
-    const INITD_NAME: &'static str = "testd";
-
     /// Initializes the process manager daemon.
     pub fn init() -> Result<Self, Error> {
         ::syslog::info!("running process manager daemon...");
@@ -141,7 +138,10 @@ impl ProcessDaemon {
         if let Some((name, _identity)) = self.processes.remove(&pid) {
             ::syslog::info!("deregistering process (pid={:?}, name={:?}", pid, name,);
 
-            if name == Self::INITD_NAME {
+            if name == "testd" {
+                return Ok(true);
+            }
+            if name == "netd" && !self.processes.values().any(|(n, _)| n == "testd") {
                 return Ok(true);
             }
         }
