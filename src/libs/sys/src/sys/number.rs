@@ -83,7 +83,9 @@ pub enum KcallNumber {
     Push = KcallNumber::NR_PUSH_SYSCALL,
     /// Initiates a rendezvous receive transfer.
     Pull = KcallNumber::NR_PULL_SYSCALL,
+    /// Allocates a Direct Memory Access region.
     AllocDma = KcallNumber::NR_ALLOC_DMA_SYSCALL,
+    /// Deallocates a Direct Memory Access region.
     FreeDma = KcallNumber::NR_FREE_DMA_SYSCALL,
     /// Invalid kernel call.
     Invalid = KcallNumber::NR_INVALID_SYSCALL,

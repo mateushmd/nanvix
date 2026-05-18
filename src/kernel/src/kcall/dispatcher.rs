@@ -90,13 +90,10 @@ pub extern "C" fn do_kcall(number: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u
         KcallNumber::SetThreadDataArea => pm::set_thread_data_area(pid, tid, arg0),
         // Handle `get_thread_data_area()` locally.
         KcallNumber::GetThreadDataArea => pm::get_thread_data_area(pid, tid),
+        // Handle `mmio_alloc()` locally.
+        KcallNumber::AllocMmio => io::mmio_alloc(pid, arg0, arg1),
         // Handle `mmio_free()` locally.
         KcallNumber::FreeMmio => io::mmio_free(pid, arg0, arg1),
-        // Handle `mmio_alloc()` locally.
-        KcallNumber::AllocDma => pm::alloc_dma(pid, arg0, arg1),
-        KcallNumber::FreeDma => pm::free_dma(pid, arg0, arg1),
-
-        KcallNumber::AllocMmio => io::mmio_alloc(pid, arg0, arg1),
         // Handle `mmio_info()` locally.
         KcallNumber::MmioInfo => io::mmio_info(pid, arg0, arg1, arg2),
         // Handle `pmio_free()` locally.
@@ -107,6 +104,10 @@ pub extern "C" fn do_kcall(number: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u
         KcallNumber::ReadPmio => io::pmio_read(pid, arg0, arg1),
         // Handle `pmio_write()` locally.
         KcallNumber::WritePmio => io::pmio_write(pid, arg0, arg1, arg2),
+        // Handle `alloc_dma()` locally.
+        KcallNumber::AllocDma => pm::alloc_dma(pid, arg0, arg1),
+        // Handle `free_dma()` locally.
+        KcallNumber::FreeDma => pm::free_dma(pid, arg0, arg1),
         // Handle `gettime()` locally.
         KcallNumber::GetTime => pm::gettime(pid, arg0),
         // Handle `debug()` locally.
