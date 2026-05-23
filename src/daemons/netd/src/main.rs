@@ -5,17 +5,24 @@ extern crate alloc;
 extern crate libc_string;
 extern crate nvx;
 
-use ::sys::{ 
-    kcall:: {
+use ::sys::{
+    kcall::{
         mm,
-        pm
+        pm,
     },
-    mm::{
-        Address,
-        MmioRegionInfo
-    },
-    pm::ProcessIdentifier
+    mm::MmioRegionInfo,
+    pm::ProcessIdentifier,
 };
+
+const REG_EEPROM: u32 = 0x0014;
+const REG_CTL: u32 = 0x0;
+const REG_STAT: u32 = 0x008;
+const REG_RAL: u32 = 0x5400;
+const REG_RAH: u32 = 0x5404;
+
+const CTL_RST: u32 = 1 << 26; // Reset
+const CTL_SLU: u32 = 0x0040; // Set Link Up
+const CTL_ASDE: u32 = 0x0020; // Auto Speed Detection Enabled
 
 fn init() -> ProcessIdentifier {
     let mypid: ProcessIdentifier = match pm::getpid() {
@@ -45,8 +52,60 @@ fn init_e1000() -> MmioRegionInfo {
     };
 
     syslog::info!("mmio for e1000 initialized successfully");
-    
     info
+}
+
+struct MMIO {
+    base_address: u32,
+}
+
+impl MMIO {
+    fn new(base_address: u32) -> Self {
+        MMIO {
+            base_address: base_address,
+        }
+    }
+
+    fn read(&self, address_offset: u32) -> u32 {
+        syslog::debug!("reading {:#x}", self.base_address + address_offset);
+        unsafe { core::ptr::read_volatile((self.base_address + address_offset) as *const u32) }
+    }
+
+    fn write(&self, address_offset: u32, value: u32) {
+        syslog::debug!("writing to {:#x}", self.base_address + address_offset);
+        unsafe {
+            core::ptr::write_volatile((self.base_address + address_offset) as *mut u32, value);
+        }
+    }
+}
+
+fn detect_eeprom(mmio: &MMIO) -> bool {
+    mmio.write(REG_EEPROM, 0x1);
+
+    let mut eeprom_exists = false;
+
+    let mut i: u32 = 0;
+
+    while !eeprom_exists && i < 1000 {
+        let val = mmio.read(REG_EEPROM);
+
+        eeprom_exists = val & 0x10 > 0;
+
+        i += 1;
+    }
+
+    eeprom_exists
+}
+
+fn read_eeprom(mmio: &MMIO, address: u8) -> u16 {
+    let mut tmp = 0u32;
+
+    mmio.write(REG_EEPROM, 1 | ((address as u32) << 8));
+    while tmp & 0b10000 == 0 {
+        tmp = mmio.read(REG_EEPROM);
+    }
+
+    (tmp >> 16) as u16
 }
 
 #[unsafe(no_mangle)]
@@ -54,9 +113,12 @@ pub fn main() {
     let _mypid = init();
 
     let info = init_e1000();
-    
-    let mapped_regs = usize::from(info.base());
 
+    let base = usize::from(info.base());
+
+    let mmio = MMIO::new(base as u32);
+
+    /*
     syslog::info!("testing dma allocation...");
     let test_vaddr = ::sys::mm::VirtualAddress::from_raw_value(0x6000_0000);
     match mm::dma_alloc(test_vaddr, 1) {
@@ -69,21 +131,73 @@ pub fn main() {
         }
         Err(e) => panic!("failed to allocate dma memory: {:?}", e),
     }
+    */
 
-    let ral = unsafe { core::ptr::read_volatile((mapped_regs + 0x5400) as *const u32) };
-    let rah = unsafe { core::ptr::read_volatile((mapped_regs + 0x5404) as *const u32) };
+    // Reset card
+    let ctl = mmio.read(REG_CTL);
+    mmio.write(REG_CTL, ctl | CTL_RST);
+
+    match detect_eeprom(&mmio) {
+        true => syslog::info!("found eeprom"),
+        false => panic!("couldn't found eeprom"),
+    };
+
+    let temp1 = read_eeprom(&mmio, 0);
+    let temp2 = read_eeprom(&mmio, 1);
+    let temp3 = read_eeprom(&mmio, 2);
 
     let mac = [
-        (ral & 0xff) as u8,
-        ((ral >> 8) & 0xff) as u8,
-        ((ral >> 16) & 0xff) as u8,
-        ((ral >> 24) & 0xff) as u8,
-        (rah & 0xff) as u8,
-        ((rah >> 8) & 0xff) as u8,
+        temp1 & 0xff,
+        temp1 >> 8,
+        temp2 & 0xff,
+        temp2 >> 8,
+        temp3 & 0xff,
+        temp3 >> 8,
     ];
-    syslog::info!("E1000 MAC Address read directly from MMIO: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-    syslog::info!("netd is running in a minimal loop.");
+    syslog::info!(
+        "E1000 MAC Address read directly from MMIO: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0],
+        mac[1],
+        mac[2],
+        mac[3],
+        mac[4],
+        mac[5]
+    );
+
+    // Wrtie MAC to Receive Address
+    let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
+    let rah: u32 = temp3 as u32;
+
+    mmio.write(REG_RAL, ral);
+    mmio.write(REG_RAH, rah);
+
+    // Start link & Set ASDE
+    let ctl = mmio.read(REG_CTL);
+    mmio.write(REG_CTL, ctl | CTL_SLU | CTL_ASDE);
+
+    // Find negotiated speed
+    let status = mmio.read(REG_STAT);
+    match status & 0b10 != 0 {
+        true => {
+            syslog::info!("Link is up!");
+
+            let speed = match (status & 0b1100_0000) >> 6 {
+                0 => 10,
+                1 => 100,
+                2 => 1000,
+                _ => -1,
+            };
+
+            syslog::info!("Auto-negotiated speed: {} Mbps", speed);
+        },
+        false => {
+            panic!("The link is not up!");
+        },
+    }
+
+    //  init_tx();
+    //  init_rx();
 
     loop {
         let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_secs(1));
