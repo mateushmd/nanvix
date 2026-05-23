@@ -16,39 +16,32 @@ use ::sys::{
     pm::ProcessIdentifier
 };
 
-const NUM_TX_DESCS: u32 = 8;
-const TX_DESCS_SIZE: u32 = 16;
+const NUM_RX_DESCS: u32 = 8;
+const RX_DESCS_SIZE: u32 = 16;
 
-// Legacy TX descriptor type
+// RX descriptor
 #[repr(C, 16)]
-pub struct TxDesc {
+pub struct RxDesc {
     buff_address: u64,
-    other: u64               // Special | CSS | RSV | STA | CMD | CSO | Length
+    other: u64               // Special | Errors | Status | Packet Checksum | Length
 }
 
-impl TxDesc {
+impl RxDesc {
     pub fn new (
         address: u64, 
         special: u16,
-        css: u8,
-        rsv: u8,
-        sta: u8,
-        cmd: u8,
-        cso: u8,
-        len: u16
+        errors: u8,
+        status: u8,
+        packet_checksum: u16,
+        len: u16,
     ) -> Self {
 
         let other : u64 = 0
             | (special << 48)
-            | (css << 40)
-            | ( (rsv & 0b1111) << 36)
-            | ( (sta & 0b1111) << 32)
-            | (cmd << 24)
-            | (cso << 16)
+            | (errors << 40)
+            | (status << 32)
+            | (packet_checksum << 16)
             | len;
-
-        // Set type to Legacy
-        other |= (0b1 << 29);
 
         Self {
             address,
@@ -57,24 +50,24 @@ impl TxDesc {
     }
 }
 
-pub struct TxRing {
+pub struct RxRing {
     base_address: u64,
     len: u16,
     head: u32,
     tail: u32
 }
 
-impl TxRing {
+impl RxRing {
 
     pub fn new (dma_addr: u32) -> Self {
-        syslog::info!("Allocating TX ring in DMA");
-        let ring_size: usize = NUM_TX_DESCS * 16;
+        syslog::info!("Allocating RX ring in DMA");
+        let ring_size: usize = NUM_RX_DESCS * 16;
 
-        for i in 0..NUM_TX_DESCS {
+        for i in 0..NUM_RX_DESCS {
             let desc_addr = alloc();
             unsafe { 
                 core::ptr::write_volatile(
-                    (vaddr + (i * TX_DESCS_SIZE)) as *const u32,
+                    (vaddr + (i * RX_DESCS_SIZE)) as *const u32,
                     desc_addr
                 )
             }
