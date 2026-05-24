@@ -5,8 +5,17 @@ extern crate alloc;
 extern crate libc_string;
 extern crate nvx;
 
-mod tx;
-mod rx;
+mod dma_info;
+mod dma_manager;
+mod descriptor;
+
+const DESCRIPTOR_SIZE: usize = 16;
+
+use crate::{
+	dma_info::DmaInfo,
+	dma_manager::DmaManager,
+	descriptor::Descriptor
+};
 
 use ::sys::{
     kcall::{
@@ -27,7 +36,7 @@ const CTL_RST: u32 = 1 << 26; // Reset
 const CTL_SLU: u32 = 0x0040; // Set Link Up
 const CTL_ASDE: u32 = 0x0020; // Auto Speed Detection Enabled
 
-const DMA_BASE_ADDRESS: u32 = 0x6000_0000;
+const DMA_BASE_ADDRESS: usize = 0x6000_0000;
 
 fn init() -> ProcessIdentifier {
     let mypid: ProcessIdentifier = match pm::getpid() {
@@ -186,23 +195,17 @@ pub fn main() {
         },
     }
 
-    let vaddr = ::sys::mm::VirtualAddress::from_raw_value(DMA_BASE_ADDRESS);
-    let paddr = match mm::dma_alloc(vaddr, 256) {       // 1 MB
-        Ok(paddr) => {
-            syslog::info!("DMA allocation successful: vaddr={:#x}, paddr={:#x}", vaddr.into_raw_value(), paddr);
-            paddr
-                /*
-                   if let Err(e) = mm::dma_free(vaddr, 1) {
-                   panic!("Failed to free DMA memory: {:?}", e);
-                   }
-                   syslog::info!("DMA memory freed successfully!");
-                   */
-        }
-        Err(e) => panic!("Failed to allocate DMA memory: {:?}", e),
-    };
+	let mut dma_man = DmaManager::new(
+		DmaInfo::new(8, 4096),
+		DMA_BASE_ADDRESS
+	);
 
-    let tx_ring = TxRing::new(vaddr);
-    let rx_ring = RxRing::new(vaddr);
+	if let Err(e) = dma_man.alloc() {
+		panic!("Failed to allocate DMA memory: {:?}", e);
+	}
+
+	let _tx_ring = Descriptor::tx_from(&dma_man);
+	let _rx_ring = Descriptor::rx_from(&dma_man);
 
     loop {
         let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_secs(1));
