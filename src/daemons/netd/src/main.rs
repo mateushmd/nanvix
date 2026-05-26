@@ -59,61 +59,61 @@ const REG_RCTL: u32 = 0x0100;
 
 //// TX/RX Device Control
 /* Transmit Control */
-const TCTL_RST: u32 = 0x00000001;    /* software reset */
+//  const TCTL_RST: u32 = 0x00000001;    /* software reset */
 const TCTL_EN: u32 = 0x00000002;    /* enable tx */
-const TCTL_BCE: u32 = 0x00000004;    /* busy check enable */
+//  const TCTL_BCE: u32 = 0x00000004;    /* busy check enable */
 const TCTL_PSP: u32 = 0x00000008;    /* pad short packets */
-const TCTL_CT: u32 = 0x00000ff0;    /* collision threshold */
+//  const TCTL_CT: u32 = 0x00000ff0;    /* collision threshold */
 const TCTL_CT_SHIFT: u32 = 4;
-const TCTL_COLD: u32 = 0x003ff000;    /* collision distance */
+//  const TCTL_COLD: u32 = 0x003ff000;    /* collision distance */
 const TCTL_COLD_SHIFT: u32 = 12;
-const TCTL_SWXOFF: u32 = 0x00400000;    /* SW Xoff transmission */
-const TCTL_PBE: u32 = 0x00800000;    /* Packet Burst Enable */
-const TCTL_RTLC: u32 = 0x01000000;    /* Re-transmit on late collision */
-const TCTL_NRTU: u32 = 0x02000000;    /* No Re-transmit on underrun */
-const TCTL_MULR: u32 = 0x10000000;    /* Multiple request support */
+//  const TCTL_SWXOFF: u32 = 0x00400000;    /* SW Xoff transmission */
+//  const TCTL_PBE: u32 = 0x00800000;    /* Packet Burst Enable */
+//  const TCTL_RTLC: u32 = 0x01000000;    /* Re-transmit on late collision */
+//  const TCTL_NRTU: u32 = 0x02000000;    /* No Re-transmit on underrun */
+//  const TCTL_MULR: u32 = 0x10000000;    /* Multiple request support */
 
 /* Receive Control */
-const RCTL_RST: u32 = 0x00000001;    /* Software reset */
+//  const RCTL_RST: u32 = 0x00000001;    /* Software reset */
 const RCTL_EN: u32 = 0x00000002;    /* enable */
-const RCTL_SBP: u32 = 0x00000004;    /* store bad packet */
-const RCTL_UPE: u32 = 0x00000008;    /* unicast promiscuous enable */
-const RCTL_MPE: u32 = 0x00000010;    /* multicast promiscuous enab */
-const RCTL_LPE: u32 = 0x00000020;    /* long packet enable */
-const RCTL_LBM_NO: u32 = 0x00000000;    /* no loopback mode */
-const RCTL_LBM_MAC: u32 = 0x00000040;    /* MAC loopback mode */
-const RCTL_LBM_SLP: u32 = 0x00000080;    /* serial link loopback mode */
-const RCTL_LBM_TCVR: u32 = 0x000000C0;    /* tcvr loopback mode */
-const RCTL_DTYP_MASK: u32 = 0x00000C00;    /* Descriptor type mask */
-const RCTL_DTYP_PS: u32 = 0x00000400;    /* Packet Split descriptor */
-const RCTL_RDMTS_HALF: u32 = 0x00000000;    /* rx desc min threshold size */
-const RCTL_RDMTS_QUAT: u32 = 0x00000100;    /* rx desc min threshold size */
-const RCTL_RDMTS_EIGTH: u32 = 0x00000200;    /* rx desc min threshold size */
-const RCTL_MO_SHIFT: u32 = 12;            /* multicast offset shift */
-const RCTL_MO_0: u32 = 0x00000000;    /* multicast offset 11:0 */
-const RCTL_MO_1: u32 = 0x00001000;    /* multicast offset 12:1 */
-const RCTL_MO_2: u32 = 0x00002000;    /* multicast offset 13:2 */
-const RCTL_MO_3: u32 = 0x00003000;    /* multicast offset 15:4 */
-const RCTL_MDR: u32 = 0x00004000;    /* multicast desc ring 0 */
+//  const RCTL_SBP: u32 = 0x00000004;    /* store bad packet */
+//  const RCTL_UPE: u32 = 0x00000008;    /* unicast promiscuous enable */
+//  const RCTL_MPE: u32 = 0x00000010;    /* multicast promiscuous enab */
+//  const RCTL_LPE: u32 = 0x00000020;    /* long packet enable */
+//  const RCTL_LBM_NO: u32 = 0x00000000;    /* no loopback mode */
+//  const RCTL_LBM_MAC: u32 = 0x00000040;    /* MAC loopback mode */
+//  const RCTL_LBM_SLP: u32 = 0x00000080;    /* serial link loopback mode */
+//  const RCTL_LBM_TCVR: u32 = 0x000000C0;    /* tcvr loopback mode */
+//  const RCTL_DTYP_MASK: u32 = 0x00000C00;    /* Descriptor type mask */
+//  const RCTL_DTYP_PS: u32 = 0x00000400;    /* Packet Split descriptor */
+//  const RCTL_RDMTS_HALF: u32 = 0x00000000;    /* rx desc min threshold size */
+//  const RCTL_RDMTS_QUAT: u32 = 0x00000100;    /* rx desc min threshold size */
+//  const RCTL_RDMTS_EIGTH: u32 = 0x00000200;    /* rx desc min threshold size */
+//  const RCTL_MO_SHIFT: u32 = 12;            /* multicast offset shift */
+//  const RCTL_MO_0: u32 = 0x00000000;    /* multicast offset 11:0 */
+//  const RCTL_MO_1: u32 = 0x00001000;    /* multicast offset 12:1 */
+//  const RCTL_MO_2: u32 = 0x00002000;    /* multicast offset 13:2 */
+//  const RCTL_MO_3: u32 = 0x00003000;    /* multicast offset 15:4 */
+//  const RCTL_MDR: u32 = 0x00004000;    /* multicast desc ring 0 */
 const RCTL_BAM: u32 = 0x00008000;    /* broadcast enable */
 /* these buffer sizes are valid if E1000_RCTL_BSEX is 0 */
-const RCTL_SZ_2048: u32 = 0x00000000;    /* rx buffer size 2048 */
-const RCTL_SZ_1024: u32 = 0x00010000;    /* rx buffer size 1024 */
-const RCTL_SZ_512: u32 = 0x00020000;    /* rx buffer size 512 */
-const RCTL_SZ_256: u32 = 0x00030000;    /* rx buffer size 256 */
+//  const RCTL_SZ_2048: u32 = 0x00000000;    /* rx buffer size 2048 */
+//  const RCTL_SZ_1024: u32 = 0x00010000;    /* rx buffer size 1024 */
+//  const RCTL_SZ_512: u32 = 0x00020000;    /* rx buffer size 512 */
+//  const RCTL_SZ_256: u32 = 0x00030000;    /* rx buffer size 256 */
 /* these buffer sizes are valid if E1000_RCTL_BSEX is 1 */
-const RCTL_SZ_16384: u32 = 0x00010000;    /* rx buffer size 16384 */
-const RCTL_SZ_8192: u32 = 0x00020000;    /* rx buffer size 8192 */
+//  const RCTL_SZ_16384: u32 = 0x00010000;    /* rx buffer size 16384 */
+//  const RCTL_SZ_8192: u32 = 0x00020000;    /* rx buffer size 8192 */
 const RCTL_SZ_4096: u32 = 0x00030000;    /* rx buffer size 4096 */
-const RCTL_VFE: u32 = 0x00040000;    /* vlan filter enable */
-const RCTL_CFIEN: u32 = 0x00080000;    /* canonical form enable */
-const RCTL_CFI: u32 = 0x00100000;    /* canonical form indicator */
-const RCTL_DPF: u32 = 0x00400000;    /* discard pause frames */
-const RCTL_PMCF: u32 = 0x00800000;    /* pass MAC control frames */
+//  const RCTL_VFE: u32 = 0x00040000;    /* vlan filter enable */
+//  const RCTL_CFIEN: u32 = 0x00080000;    /* canonical form enable */
+//  const RCTL_CFI: u32 = 0x00100000;    /* canonical form indicator */
+//  const RCTL_DPF: u32 = 0x00400000;    /* discard pause frames */
+//  const RCTL_PMCF: u32 = 0x00800000;    /* pass MAC control frames */
 const RCTL_BSEX: u32 = 0x02000000;    /* Buffer size extension */
 const RCTL_SECRC: u32 = 0x04000000;    /* Strip Ethernet CRC */
-const RCTL_FLXBUF_MASK: u32 = 0x78000000;    /* Flexible buffer size */
-const RCTL_FLXBUF_SHIFT: u32 = 27;            /* Flexible buffer shift */
+//  const RCTL_FLXBUF_MASK: u32 = 0x78000000;    /* Flexible buffer size */
+//  const RCTL_FLXBUF_SHIFT: u32 = 27;            /* Flexible buffer shift */
 
 fn init() -> ProcessIdentifier {
     let mypid: ProcessIdentifier = match pm::getpid() {
@@ -286,8 +286,10 @@ pub fn main() {
 
     // Write TX ring info to e1000 registers
     let tx_addr = dma_man.info().tx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
-    mmio.write(REG_TDBAH, ((tx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
-    mmio.write(REG_TDBAL, (tx_addr & 0xFFFF_FFFF) as u32);
+    // mmio.write(REG_TDBAH, ((tx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
+    // mmio.write(REG_TDBAL, (tx_addr & 0xFFFF_FFFF) as u32);
+    mmio.write(REG_TDBAH, 0);
+    mmio.write(REG_TDBAL, tx_addr as u32);
     mmio.write(REG_TDLEN, dma_man.info().ring_len() as u32);
     mmio.write(REG_TDT, 0);
     mmio.write(REG_TDH, 0);
@@ -303,8 +305,10 @@ pub fn main() {
 
     // Write RX ring info to e1000 registers
     let rx_addr = dma_man.info().rx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
-    mmio.write(REG_RDBAH, ((rx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
-    mmio.write(REG_RDBAL, (rx_addr & 0xFFFF_FFFF) as u32);
+    // mmio.write(REG_RDBAH, ((rx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
+    // mmio.write(REG_RDBAL, (rx_addr & 0xFFFF_FFFF) as u32);
+    mmio.write(REG_RDBAH, 0);
+    mmio.write(REG_RDBAL, rx_addr as u32);
     mmio.write(REG_RDLEN, dma_man.info().ring_len() as u32);
     mmio.write(REG_RDH, 0);
     mmio.write(REG_RDT, (dma_man.info().desc_count() as u32) - 1);
@@ -315,7 +319,6 @@ pub fn main() {
     );
 
     // Setup multicast table array
-    let mut i = 0;
     for i in 0..128 {
         mmio.write(REG_MTA + (i * 4), 0);
     }
