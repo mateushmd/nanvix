@@ -744,7 +744,7 @@ endif
 image: all-nanvix
 ifeq ($(strip $(filter $(MACHINE),microvm hyperlight)),)
 	$(MKDIR_CMD) $(IMAGE_DIR)/boot/grub
-	$(CP_CMD) $(GRUB_CFG_SCRIPT) $(IMAGE_DIR)/boot/grub/
+	$(CP_CMD) $(GRUB_CFG_SCRIPT) $(IMAGE_DIR)/boot/grub/grub.cfg
 	$(CP_CMD) $(BINARIES_DIR)/*.$(EXEC_FORMAT) $(IMAGE_DIR)/
 	$(GRUB_CMD) $(IMAGE_DIR) -o $(IMAGE)
 endif
