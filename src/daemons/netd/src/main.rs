@@ -19,8 +19,7 @@ use crate::{
 
 use ::alloc::vec::Vec;
 
-use nanvix_net::E1000RxToken;
-use smoltcp::phy::{Device, DeviceCapabilities, Medium};
+use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use ::sys::{
     error::{ Error, ErrorCode },
     kcall::{
@@ -361,7 +360,6 @@ impl E1000Device {
     pub fn transmit_frame (
         &mut self,
         packet: &[u8],
-        tx_ring: Vec<*mut Descriptor>,
 
     ) -> Result<usize, Error> {
 
@@ -373,7 +371,7 @@ impl E1000Device {
         }
 
         let index = self.mmio.read(REG_TDT);
-        let desc = tx_ring[index as usize];
+        let desc = self.tx_ring[index as usize];
 
         let tx_rsv_sta = unsafe { (& *desc).get_tx_rsv_sta() };
 
@@ -410,12 +408,11 @@ impl E1000Device {
 
     pub fn receive_frame (
         &mut self,
-        rx_ring: Vec<*mut Descriptor>,
 
     ) -> Option<Vec<u8>> {
 
         let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().ring_len() as u32;
-        let desc = rx_ring[index as usize];
+        let desc = self.rx_ring[index as usize];
 
         let frame = {
 
@@ -461,6 +458,35 @@ impl E1000Device {
     }
 }
 
+pub struct E1000RxToken {
+    buffer: Vec<u8>,
+}
+
+impl RxToken for E1000RxToken {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        f(&self.buffer)
+    }
+}
+
+pub struct E1000TxToken<'a> {
+    device: &'a mut E1000Device,
+}
+
+impl TxToken for E1000TxToken<'_> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut packet = ::alloc::vec![0u8; len];
+        let result = f(&mut packet);
+        let _ = self.device.transmit_frame(&packet);
+        result
+    }
+}
+
 impl Device for E1000Device {
     type RxToken<'a>
         = E1000RxToken
@@ -468,16 +494,17 @@ impl Device for E1000Device {
         Self: 'a;
 
     type TxToken<'a>
-        = E1000TxToken
+        = E1000TxToken<'a>
     where
         Self: 'a;
 
-    fn receive(&mut self, timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        todo!("Receive function here")
+    fn receive(&mut self, _timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let packet = self.receive_frame()?;
+        Some((E1000RxToken { buffer: packet }, E1000TxToken { device: self }))
     }
 
-    fn transmit(&mut self, timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
-        todo!("Transmit function here")
+    fn transmit(&mut self, _timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+        Some(E1000TxToken { device: self })
     }
 
     fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
