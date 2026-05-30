@@ -19,8 +19,10 @@ use crate::{
 
 use ::alloc::vec::Vec;
 
+use nanvix_net::E1000RxToken;
+use smoltcp::phy::{Device, DeviceCapabilities, Medium};
 use ::sys::{
-	error::{ Error, ErrorCode },
+    error::{ Error, ErrorCode },
     kcall::{
         mm,
         pm,
@@ -30,17 +32,17 @@ use ::sys::{
 };
 
 use ::core::{
-	convert::From,
-	module_path,
-	option::{ Option, Option::* },
-	panic,
-	result::{ Result, Result::* },
+    convert::From,
+    module_path,
+    option::{ Option, Option::* },
+    panic,
+    result::{ Result, Result::* },
     sync::atomic::{
         fence,
         Ordering,
     },
     slice,
-	writeln
+    writeln
 };
 
 const REG_EEPROM: u32 = 0x0014;
@@ -216,238 +218,286 @@ fn read_eeprom(mmio: &MMIO, address: u8) -> u16 {
     (tmp >> 16) as u16
 }
 
+
 #[allow(dead_code)]
-fn transmit (
-    mmio: &MMIO,
-    dma_man: &DmaManager,
-    packet: &[u8],
+pub struct E1000Device {
+    mmio: MMIO,
+    dma_man: DmaManager,
+    mac_addr: [u16; 6],
     tx_ring: Vec<*mut Descriptor>,
+    rx_ring: Vec<*mut Descriptor>,
+}
+
+#[allow(dead_code)]
+impl E1000Device {
+    pub fn init() -> Self {
+        let _mypid = init();
+
+        let info = init_e1000();
+
+        let base = usize::from(info.base());
+
+        let mmio = MMIO::new(base as u32);
+
+        // Reset card
+        let ctl = mmio.read(REG_CTL);
+        mmio.write(REG_CTL, ctl | CTL_RST);
+
+        fence(Ordering::Release);
+
+        match detect_eeprom(&mmio) {
+            true => syslog::info!("found eeprom"),
+            false => panic!("couldn't found eeprom"),
+        };
+
+        let temp1 = read_eeprom(&mmio, 0);
+        let temp2 = read_eeprom(&mmio, 1);
+        let temp3 = read_eeprom(&mmio, 2);
+
+        let mac = [
+            temp1 & 0xff,
+            temp1 >> 8,
+            temp2 & 0xff,
+            temp2 >> 8,
+            temp3 & 0xff,
+            temp3 >> 8,
+        ];
+
+        syslog::info!(
+            "E1000 MAC Address read directly from MMIO: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        );
+
+        // Write MAC to Receive Address
+        let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
+        let rah: u32 = temp3 as u32;
+        mmio.write(REG_RAL, ral);
+        mmio.write(REG_RAH, rah);
+        mmio.write(REG_RAH, rah | (1 << 31));
+
+        // Start link & Set ASDE
+        let ctl = mmio.read(REG_CTL);
+        mmio.write(REG_CTL, ctl | CTL_SLU | CTL_ASDE);
+
+        // Find negotiated speed
+        let status = mmio.read(REG_STAT);
+        match status & 0b10 != 0 {
+            true => {
+                syslog::info!("Link is up!");
+
+                let speed = match (status & 0b1100_0000) >> 6 {
+                    0 => 10,
+                    1 => 100,
+                    2 => 1000,
+                    _ => -1,
+                };
+
+                syslog::info!("Auto-negotiated speed: {} Mbps", speed);
+            },
+            false => {
+                panic!("The link is not up!");
+            },
+        }
+
+        let mut dma_man = DmaManager::new(
+            DmaInfo::new(8, 4096),
+            DMA_BASE_ADDRESS
+        );
+
+        if let Err(e) = dma_man.alloc() {
+            panic!("Failed to allocate DMA memory: {:?}", e);
+        }
+        syslog::trace!("DMA Memory successfully allocated!");
+
+        let tx_ring = Descriptor::tx_from(&dma_man);
+        let rx_ring = Descriptor::rx_from(&dma_man);
+
+        // Write TX ring info to e1000 registers
+        let tx_addr = dma_man.info().tx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
+        mmio.write(REG_TDBAH, 0);
+        mmio.write(REG_TDBAL, tx_addr as u32);
+        mmio.write(REG_TDLEN, dma_man.info().ring_len() as u32);
+        mmio.write(REG_TDT, 0);
+        mmio.write(REG_TDH, 0);
+        mmio.write(
+            REG_TCTL, 
+            TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT)
+            // enable | padShortPackets | collision stuff
+        );
+        mmio.write(
+            REG_TIPG,
+            10 | (8<<10) | (6<<20) // Intel magic number
+        );
+        syslog::trace!("TX Ring Info written to e1000 MMIO");
+
+        // Write RX ring info to e1000 registers
+        let rx_addr = dma_man.info().rx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
+        mmio.write(REG_RDBAH, 0);
+        mmio.write(REG_RDBAL, rx_addr as u32);
+        mmio.write(REG_RDLEN, dma_man.info().ring_len() as u32);
+        mmio.write(REG_RDH, 0);
+        mmio.write(REG_RDT, (dma_man.info().desc_count() as u32) - 1);
+        mmio.write(
+            REG_RCTL,
+            RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC
+            // enable | broadcast | 4096byte rx buffer
+        );
+        syslog::trace!("RX Ring Info written to e1000 MMIO");
+
+        // Setup multicast table array
+        for i in 0..128 {
+            mmio.write(REG_MTA + (i * 4), 0);
+        }
+        syslog::trace!("Multicast table array set up");
+
+        Self { mmio, dma_man, mac_addr: mac, tx_ring, rx_ring }
+    }
+
+    pub fn transmit_frame (
+        &mut self,
+        packet: &[u8],
+        tx_ring: Vec<*mut Descriptor>,
 
     ) -> Result<usize, Error> {
 
-    if packet.len() > dma_man.info().buff_len() as usize {
-        return Err(Error::new(
-            ErrorCode::InvalidArgument,
-            "packet exceeds e1000 buffer size",
-        ));
+        if packet.len() > self.dma_man.info().buff_len() as usize {
+            return Err(Error::new(
+                ErrorCode::InvalidArgument,
+                "packet exceeds e1000 buffer size",
+            ));
+        }
+
+        let index = self.mmio.read(REG_TDT);
+        let desc = tx_ring[index as usize];
+
+        let tx_rsv_sta = unsafe { (& *desc).get_tx_rsv_sta() };
+
+        if tx_rsv_sta & 1 == 0 {         // Check [Descriptor Done]
+            return Err(Error::new(
+                ErrorCode::TryAgain,
+                "tx descriptor still owned by device"
+            ));
+        }
+
+        unsafe { 
+            let buff_address = (& *desc).buff_address();
+            let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
+            buffer.copy_from_slice(packet);
+        };
+
+        unsafe {
+            let desc_ref = &mut *desc;
+            desc_ref.set_tx_length(packet.len() as u16);
+            desc_ref.set_tx_cso(0);
+            desc_ref.set_tx_cmd(0b1001);
+            desc_ref.set_tx_rsv_sta(0);
+            desc_ref.set_tx_css(0);
+            desc_ref.set_tx_special(0);
+        }
+
+        fence(Ordering::SeqCst);
+
+        self.mmio.write(REG_TDT, (index+1) % self.dma_man.info().desc_count() as u32); 
+        let _ = self.mmio.read(REG_STAT);        // Flush
+
+        Ok(packet.len())
     }
 
-    let index = mmio.read(REG_TDT);
-    let desc = tx_ring[index as usize];
-
-	let tx_rsv_sta = unsafe { (& *desc).get_tx_rsv_sta() };
-
-    if tx_rsv_sta & 1 == 0 {         // Check [Descriptor Done]
-        return Err(Error::new(
-            ErrorCode::TryAgain,
-            "tx descriptor still owned by device"
-        ));
-    }
-
-    unsafe { 
-		let buff_address = (& *desc).buff_address();
-        let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
-        buffer.copy_from_slice(packet);
-    };
-	
-	unsafe {
-		let desc_ref = &mut *desc;
-		desc_ref.set_tx_length(packet.len() as u16);
-		desc_ref.set_tx_cso(0);
-		desc_ref.set_tx_cmd(0b1001);
-		desc_ref.set_tx_rsv_sta(0);
-		desc_ref.set_tx_css(0);
-		desc_ref.set_tx_special(0);
-	}
-
-    fence(Ordering::SeqCst);
-
-    mmio.write(REG_TDT, (index+1) % dma_man.info().desc_count() as u32); 
-    let _ = mmio.read(REG_STAT);        // Flush
-
-    Ok(packet.len())
-}
-
-#[allow(dead_code)]
-fn receive (
-    mmio: &MMIO,
-    dma_man: &DmaManager,
-    rx_ring: Vec<*mut Descriptor>,
+    pub fn receive_frame (
+        &mut self,
+        rx_ring: Vec<*mut Descriptor>,
 
     ) -> Option<Vec<u8>> {
-    
-    let index = (mmio.read(REG_RDT) + 1) % dma_man.info().ring_len() as u32;
-    let desc = rx_ring[index as usize];
-    
-    let frame = {
 
-		let status = unsafe { (& *desc).get_rx_status() };
+        let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().ring_len() as u32;
+        let desc = rx_ring[index as usize];
 
-        if status & 1 == 0 {         // Check [Descriptor Done]
-            return None;
-        }
+        let frame = {
 
-        let frame = if status & 0b10 == 0 {      // Check [End Of Packet]
-            None
+            let status = unsafe { (& *desc).get_rx_status() };
 
-        } else {
-			let rx_length = unsafe {  (& *desc).get_rx_length() };
+            if status & 1 == 0 {         // Check [Descriptor Done]
+                return None;
+            }
 
-            let length = core::cmp::min(rx_length, dma_man.info().buff_len()) as usize;
-            let buffer = unsafe { (& *desc).buff_address() };
+            let frame = if status & 0b10 == 0 {      // Check [End Of Packet]
+                None
 
-            Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
+            } else {
+                let rx_length = unsafe {  (& *desc).get_rx_length() };
+
+                let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
+                let buffer = unsafe { (& *desc).buff_address() };
+
+                Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
+            };
+
+            unsafe {
+                let desc_ref = &mut *desc;
+                desc_ref.set_rx_length(0);
+                desc_ref.set_rx_chksum(0);
+                desc_ref.set_rx_status(0);
+                desc_ref.set_rx_errors(0);
+                desc_ref.set_rx_special(0);
+            };
+
+            if frame.is_some() {
+                syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
+            }
+
+            frame
         };
-		
-		unsafe {
-			let desc_ref = &mut *desc;
-			desc_ref.set_rx_length(0);
-			desc_ref.set_rx_chksum(0);
-			desc_ref.set_rx_status(0);
-			desc_ref.set_rx_errors(0);
-			desc_ref.set_rx_special(0);
-		};
 
-        if frame.is_some() {
-            syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
-        }
+        fence(Ordering::SeqCst);
+        self.mmio.write(REG_RDT, index);
+        let _ = self.mmio.read(REG_STAT);        // Flush
 
         frame
-    };
+    }
+}
 
-    fence(Ordering::SeqCst);
-    mmio.write(REG_RDT, index);
-    let _ = mmio.read(REG_STAT);        // Flush
+impl Device for E1000Device {
+    type RxToken<'a>
+        = E1000RxToken
+    where
+        Self: 'a;
 
-    frame
+    type TxToken<'a>
+        = E1000TxToken
+    where
+        Self: 'a;
+
+    fn receive(&mut self, timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        todo!("Receive function here")
+    }
+
+    fn transmit(&mut self, timestamp: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+        todo!("Transmit function here")
+    }
+
+    fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
+        let mut capabilities = DeviceCapabilities::default();
+        capabilities.medium = Medium::Ethernet;
+        capabilities.max_transmission_unit = 1514;
+        capabilities.max_burst_size = Some(1);
+        capabilities.checksum = Default::default();
+        capabilities
+    }
+
 }
 
 #[no_mangle]
+#[allow(unused_mut, unused_variables)]
 pub fn main() {
-    let _mypid = init();
 
-    let info = init_e1000();
+    let mut e1000 = E1000Device::init();
 
-    let base = usize::from(info.base());
-
-    let mmio = MMIO::new(base as u32);
-
-    // Reset card
-    let ctl = mmio.read(REG_CTL);
-    mmio.write(REG_CTL, ctl | CTL_RST);
-
-    fence(Ordering::Release);
-
-    match detect_eeprom(&mmio) {
-        true => syslog::info!("found eeprom"),
-        false => panic!("couldn't found eeprom"),
-    };
-
-    let temp1 = read_eeprom(&mmio, 0);
-    let temp2 = read_eeprom(&mmio, 1);
-    let temp3 = read_eeprom(&mmio, 2);
-
-    let mac = [
-        temp1 & 0xff,
-        temp1 >> 8,
-        temp2 & 0xff,
-        temp2 >> 8,
-        temp3 & 0xff,
-        temp3 >> 8,
-    ];
-
-    syslog::info!(
-        "E1000 MAC Address read directly from MMIO: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac[0],
-        mac[1],
-        mac[2],
-        mac[3],
-        mac[4],
-        mac[5]
-    );
-
-    // Write MAC to Receive Address
-    let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
-    let rah: u32 = temp3 as u32;
-    mmio.write(REG_RAL, ral);
-    mmio.write(REG_RAH, rah);
-    mmio.write(REG_RAH, rah | (1 << 31));
-
-    // Start link & Set ASDE
-    let ctl = mmio.read(REG_CTL);
-    mmio.write(REG_CTL, ctl | CTL_SLU | CTL_ASDE);
-
-    // Find negotiated speed
-    let status = mmio.read(REG_STAT);
-    match status & 0b10 != 0 {
-        true => {
-            syslog::info!("Link is up!");
-
-            let speed = match (status & 0b1100_0000) >> 6 {
-                0 => 10,
-                1 => 100,
-                2 => 1000,
-                _ => -1,
-            };
-
-            syslog::info!("Auto-negotiated speed: {} Mbps", speed);
-        },
-        false => {
-            panic!("The link is not up!");
-        },
-    }
-
-    let mut dma_man = DmaManager::new(
-        DmaInfo::new(8, 4096),
-        DMA_BASE_ADDRESS
-    );
-
-    if let Err(e) = dma_man.alloc() {
-        panic!("Failed to allocate DMA memory: {:?}", e);
-    }
-
-    let _tx_ring = Descriptor::tx_from(&dma_man);
-    let _rx_ring = Descriptor::rx_from(&dma_man);
-
-    // Write TX ring info to e1000 registers
-    let tx_addr = dma_man.info().tx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
-    // mmio.write(REG_TDBAH, ((tx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
-    // mmio.write(REG_TDBAL, (tx_addr & 0xFFFF_FFFF) as u32);
-    mmio.write(REG_TDBAH, 0);
-    mmio.write(REG_TDBAL, tx_addr as u32);
-    mmio.write(REG_TDLEN, dma_man.info().ring_len() as u32);
-    mmio.write(REG_TDT, 0);
-    mmio.write(REG_TDH, 0);
-    mmio.write(
-        REG_TCTL, 
-        TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT)
-        // enable | padShortPackets | collision stuff
-    );
-    mmio.write(
-        REG_TIPG,
-        10 | (8<<10) | (6<<20) // Intel magic number
-    );
-
-    // Write RX ring info to e1000 registers
-    let rx_addr = dma_man.info().rx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
-    // mmio.write(REG_RDBAH, ((rx_addr & 0xFFFF_FFFF_0000_0000) >> 32) as u32);
-    // mmio.write(REG_RDBAL, (rx_addr & 0xFFFF_FFFF) as u32);
-    mmio.write(REG_RDBAH, 0);
-    mmio.write(REG_RDBAL, rx_addr as u32);
-    mmio.write(REG_RDLEN, dma_man.info().ring_len() as u32);
-    mmio.write(REG_RDH, 0);
-    mmio.write(REG_RDT, (dma_man.info().desc_count() as u32) - 1);
-    mmio.write(
-        REG_RCTL,
-        RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC
-        // enable | broadcast | 4096byte rx buffer
-    );
-
-    // Setup multicast table array
-    for i in 0..128 {
-        mmio.write(REG_MTA + (i * 4), 0);
-    }
-
+    syslog::trace!("Entering polling loop...");
     loop {
         let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_secs(1));
     }
