@@ -45,8 +45,11 @@ impl DmaManager {
 
 	pub fn alloc(&mut self) -> Result<(), Error> {
 		if matches!(self.base_paddr, Err(_)) {
+			const PAGE_SIZE: usize = 4096;
+			let nframes = (self.info().dma_len() + PAGE_SIZE - 1) / PAGE_SIZE;
+			
 			let paddr = dma_alloc(
-				VirtualAddress::from_raw_value(self.base_vaddr), self.info().dma_len()
+				VirtualAddress::from_raw_value(self.base_vaddr), nframes
 			)?;
 
 			syslog::info!(
