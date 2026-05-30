@@ -1,5 +1,3 @@
-#![no_std]
-#![no_main]
 
 extern crate alloc;
 extern crate libc_string;
@@ -8,13 +6,15 @@ extern crate nvx;
 mod dma_info;
 mod dma_manager;
 mod descriptor;
+mod transmit;
+mod receive;
 
 const DESCRIPTOR_SIZE: usize = 16;
 
 use crate::{
     dma_info::DmaInfo,
     dma_manager::DmaManager,
-    descriptor::Descriptor
+    descriptor::Descriptor,
 };
 
 use ::sys::{
@@ -24,6 +24,14 @@ use ::sys::{
     },
     mm::MmioRegionInfo,
     pm::ProcessIdentifier,
+};
+
+use ::core::{
+    sync::atomic::{
+        fence,
+        Ordering,
+    },
+    slice
 };
 
 const REG_EEPROM: u32 = 0x0014;
@@ -199,6 +207,97 @@ fn read_eeprom(mmio: &MMIO, address: u8) -> u16 {
     (tmp >> 16) as u16
 }
 
+fn transmit (
+    mmio: &MMIO,
+    dma_man: &DmaManager,
+    packet: &[u8],
+    tx_ring: Vec<*mut Descriptor>,
+
+    ) -> Result<usize, Error> {
+
+    if packet.len() > dma_man.info().buff_len() as usize {
+        return Err(Error::new(
+            ErrorCode::InvalidArgument,
+            "packet exceeds e1000 buffer size",
+        ));
+    }
+
+    let index = mmio.read(REG_TDT);
+    let desc : Descriptor = tx_ring[index];
+
+    if desc.get_tx_rsv_sta() & 1 == 0 {         // Check [Descriptor Done]
+        return Err(Error::new(
+            ErrorCode::TryAgain,
+            "tx descriptor still owned by device"
+        ));
+    }
+
+    unsafe { 
+        let buffer = slice::from_raw_parts_mut(desc.buff_address() as *mut u8, packet.len());
+        buffer.copy_from_slice(packet);
+    };
+
+    desc.set_tx_length(packet.len() as u16);
+    desc.set_tx_cso(0);
+    desc.set_tx_cmd(0b1001);
+    desc.set_tx_rsv_sta(0);
+    desc.set_tx_css(0);
+    desc.set_tx_special(0);
+
+    fence(Ordering::SeqCst);
+
+    mmio.write(REG_TDT, (index+1) % dma_man.info().desc_count() as u32); 
+    let _ = mmio.read(REG_STAT);        // Flush
+
+    Ok(packet.len())
+}
+
+pub fn receive (
+    mmio: &MMIO,
+    dma_man: &DmaManager,
+    rx_ring: Vec<*mut Descriptor>,
+
+    ) -> Option<Vec<u8>> {
+    
+    let index = (mmio.read(REG_RDT) + 1 % dma_man.info().ring_len() as u32);
+    let mut desc : Descriptor = rx_ring[index];
+    
+    let frame = {
+
+        if desc.get_rx_status() & 1 == 0 {         // Check [Descriptor Done]
+            return None;
+        }
+
+        let frame = if desc.get_rx_status() & 0b10 == 0 {      // Check [End Of Packet]
+            None
+
+        } else {
+            let length = core::cmp::min(desc.get_rx_length(), dma_man.info().buff_len()) as usize;
+            let buffer = desc.buff_address();
+
+            Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
+        };
+
+        desc.set_rx_length(0);
+        desc.set_rx_chksum(0);
+        desc.set_rx_status(0);
+        desc.set_rx_errors(0);
+        desc.set_rx_special(0);
+
+        if frame.is_some() {
+            syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
+        }
+
+        frame
+    };
+
+    fence(Ordering::SeqCst);
+    mmio.write(REG_RDT, index);
+    let _ = mmio.read(REG_STAT);        // Flush
+
+    frame
+}
+
 #[unsafe(no_mangle)]
 pub fn main() {
     let _mypid = init();
@@ -212,6 +311,8 @@ pub fn main() {
     // Reset card
     let ctl = mmio.read(REG_CTL);
     mmio.write(REG_CTL, ctl | CTL_RST);
+
+    fence(Ordering::Release);
 
     match detect_eeprom(&mmio) {
         true => syslog::info!("found eeprom"),

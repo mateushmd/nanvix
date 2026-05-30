@@ -11,6 +11,7 @@ impl DmaInfo {
 		}
 	}
 
+    /// Number of descriptors of the same type
 	pub fn desc_count(&self) -> u8 {
 		self.desc_count
 	}
