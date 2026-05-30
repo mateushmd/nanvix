@@ -276,7 +276,7 @@ fn receive (
 
     ) -> Option<Vec<u8>> {
     
-    let index = mmio.read(REG_RDT) + 1 % dma_man.info().ring_len() as u32;
+    let index = (mmio.read(REG_RDT) + 1) % dma_man.info().ring_len() as u32;
     let desc = rx_ring[index as usize];
     
     let frame = {
