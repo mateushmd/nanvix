@@ -1,3 +1,5 @@
+#![no_std]
+#![no_main]
 
 extern crate alloc;
 extern crate libc_string;
@@ -6,8 +8,6 @@ extern crate nvx;
 mod dma_info;
 mod dma_manager;
 mod descriptor;
-mod transmit;
-mod receive;
 
 const DESCRIPTOR_SIZE: usize = 16;
 
@@ -17,7 +17,10 @@ use crate::{
     descriptor::Descriptor,
 };
 
+use ::alloc::vec::Vec;
+
 use ::sys::{
+	error::{ Error, ErrorCode },
     kcall::{
         mm,
         pm,
@@ -27,11 +30,17 @@ use ::sys::{
 };
 
 use ::core::{
+	convert::From,
+	module_path,
+	option::{ Option, Option::* },
+	panic,
+	result::{ Result, Result::* },
     sync::atomic::{
         fence,
         Ordering,
     },
-    slice
+    slice,
+	writeln
 };
 
 const REG_EEPROM: u32 = 0x0014;
@@ -207,6 +216,7 @@ fn read_eeprom(mmio: &MMIO, address: u8) -> u16 {
     (tmp >> 16) as u16
 }
 
+#[allow(dead_code)]
 fn transmit (
     mmio: &MMIO,
     dma_man: &DmaManager,
@@ -223,9 +233,11 @@ fn transmit (
     }
 
     let index = mmio.read(REG_TDT);
-    let desc : Descriptor = tx_ring[index];
+    let desc = tx_ring[index as usize];
 
-    if desc.get_tx_rsv_sta() & 1 == 0 {         // Check [Descriptor Done]
+	let tx_rsv_sta = unsafe { (& *desc).get_tx_rsv_sta() };
+
+    if tx_rsv_sta & 1 == 0 {         // Check [Descriptor Done]
         return Err(Error::new(
             ErrorCode::TryAgain,
             "tx descriptor still owned by device"
@@ -233,16 +245,20 @@ fn transmit (
     }
 
     unsafe { 
-        let buffer = slice::from_raw_parts_mut(desc.buff_address() as *mut u8, packet.len());
+		let buff_address = (& *desc).buff_address();
+        let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
         buffer.copy_from_slice(packet);
     };
-
-    desc.set_tx_length(packet.len() as u16);
-    desc.set_tx_cso(0);
-    desc.set_tx_cmd(0b1001);
-    desc.set_tx_rsv_sta(0);
-    desc.set_tx_css(0);
-    desc.set_tx_special(0);
+	
+	unsafe {
+		let desc_ref = &mut *desc;
+		desc_ref.set_tx_length(packet.len() as u16);
+		desc_ref.set_tx_cso(0);
+		desc_ref.set_tx_cmd(0b1001);
+		desc_ref.set_tx_rsv_sta(0);
+		desc_ref.set_tx_css(0);
+		desc_ref.set_tx_special(0);
+	}
 
     fence(Ordering::SeqCst);
 
@@ -252,37 +268,45 @@ fn transmit (
     Ok(packet.len())
 }
 
-pub fn receive (
+#[allow(dead_code)]
+fn receive (
     mmio: &MMIO,
     dma_man: &DmaManager,
     rx_ring: Vec<*mut Descriptor>,
 
     ) -> Option<Vec<u8>> {
     
-    let index = (mmio.read(REG_RDT) + 1 % dma_man.info().ring_len() as u32);
-    let mut desc : Descriptor = rx_ring[index];
+    let index = mmio.read(REG_RDT) + 1 % dma_man.info().ring_len() as u32;
+    let desc = rx_ring[index as usize];
     
     let frame = {
 
-        if desc.get_rx_status() & 1 == 0 {         // Check [Descriptor Done]
+		let status = unsafe { (& *desc).get_rx_status() };
+
+        if status & 1 == 0 {         // Check [Descriptor Done]
             return None;
         }
 
-        let frame = if desc.get_rx_status() & 0b10 == 0 {      // Check [End Of Packet]
+        let frame = if status & 0b10 == 0 {      // Check [End Of Packet]
             None
 
         } else {
-            let length = core::cmp::min(desc.get_rx_length(), dma_man.info().buff_len()) as usize;
-            let buffer = desc.buff_address();
+			let rx_length = unsafe {  (& *desc).get_rx_length() };
+
+            let length = core::cmp::min(rx_length, dma_man.info().buff_len()) as usize;
+            let buffer = unsafe { (& *desc).buff_address() };
 
             Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
         };
-
-        desc.set_rx_length(0);
-        desc.set_rx_chksum(0);
-        desc.set_rx_status(0);
-        desc.set_rx_errors(0);
-        desc.set_rx_special(0);
+		
+		unsafe {
+			let desc_ref = &mut *desc;
+			desc_ref.set_rx_length(0);
+			desc_ref.set_rx_chksum(0);
+			desc_ref.set_rx_status(0);
+			desc_ref.set_rx_errors(0);
+			desc_ref.set_rx_special(0);
+		};
 
         if frame.is_some() {
             syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
@@ -298,7 +322,7 @@ pub fn receive (
     frame
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub fn main() {
     let _mypid = init();
 

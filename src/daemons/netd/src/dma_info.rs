@@ -37,6 +37,7 @@ impl DmaInfo {
 		self.tx_ring_offset() + self.ring_len()
 	}
 
+	#[allow(dead_code)]
 	pub fn tx_buff_offset(&self) -> usize {
 		self.rx_ring_offset() + self.ring_len()
 	}

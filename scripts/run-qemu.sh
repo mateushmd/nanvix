@@ -69,7 +69,8 @@ function run_qemu
 	local mode=$4       # Spawn mode (run or debug).
 	local timeout=$5    # Timeout for test mode.
 	local GDB_PORT=1234 # GDB port used for debugging.
-	local nic="-nic user,model=e1000,hostfwd=udp::5555-:5555"
+	local nic="-netdev user,id=net0,hostfwd=tcp::5555-:5555 -device e1000,netdev=net0"
+	local extra=""
 	local cmd=""
 
 	# Check if the target is unsupported.
@@ -93,6 +94,7 @@ function run_qemu
 			machine="-machine pc"
 			stdout="-debugcon stdio"
 			smp=""
+			extra="-trace \"net_*\" -trace \"e1000_*\" -trace \"slirp_*\""
 			;;
 		"qemu-pc-smp")
 			machine="-machine pc"
@@ -123,6 +125,7 @@ function run_qemu
 			$stdout
 			$smp
 			$nic
+			$extra
 			-display none
 			-cpu pentium3
 			-m ${MEMSIZE}B
