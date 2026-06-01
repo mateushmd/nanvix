@@ -141,10 +141,7 @@ fn test_unsubscribe_without_capability() -> bool {
 
     // Attempt to unsubscribe from event.
     matches!(
-        ::sys::kcall::event::evctrl(
-            Event::Exception(debug_exception),
-            EventCtrlRequest::Unregister
-        ),
+        ::sys::kcall::event::evctrl(Event::Exception(debug_exception), EventCtrlRequest::Unregister),
         Ok(())
     )
 }

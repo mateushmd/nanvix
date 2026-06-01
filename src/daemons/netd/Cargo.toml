@@ -11,6 +11,7 @@ libc_string = { workspace = true }
 nanvix-net = { workspace = true }
 nvx = { workspace = true }
 sys = { workspace = true }
+syscall = { workspace = true, features = ["syscall"] }
 syslog = { workspace = true }
 smoltcp = { workspace = true, features = ["medium-ethernet", "socket-udp", "socket-icmp"] }
 

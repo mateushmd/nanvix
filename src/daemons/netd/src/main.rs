@@ -5,23 +5,28 @@ extern crate alloc;
 extern crate libc_string;
 extern crate nvx;
 
+mod descriptor;
 mod dma_info;
 mod dma_manager;
-mod descriptor;
 
 const DESCRIPTOR_SIZE: usize = 16;
-
 use crate::{
+    descriptor::Descriptor,
     dma_info::DmaInfo,
     dma_manager::DmaManager,
-    descriptor::Descriptor,
 };
+use syscall::safe::time::Time;
 
-use ::alloc::vec::Vec;
-
-use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
+use ::alloc::{
+    borrow::ToOwned,
+    vec,
+    vec::Vec,
+};
 use ::sys::{
-    error::{ Error, ErrorCode },
+    error::{
+        Error,
+        ErrorCode,
+    },
     kcall::{
         mm,
         pm,
@@ -29,19 +34,48 @@ use ::sys::{
     mm::MmioRegionInfo,
     pm::ProcessIdentifier,
 };
+use core::str::FromStr;
+use smoltcp::{
+    iface::{
+        Config,
+        Interface,
+        SocketSet,
+    },
+    phy::{
+        Device,
+        DeviceCapabilities,
+        Medium,
+        RxToken,
+        TxToken,
+    },
+    socket::tcp,
+    time::Instant,
+    wire::{
+        EthernetAddress,
+        IpAddress,
+        IpCidr,
+        Ipv4Address,
+    },
+};
 
 use ::core::{
     convert::From,
     module_path,
-    option::{ Option, Option::* },
+    option::{
+        Option,
+        Option::*,
+    },
     panic,
-    result::{ Result, Result::* },
+    result::{
+        Result,
+        Result::*,
+    },
+    slice,
     sync::atomic::{
         fence,
         Ordering,
     },
-    slice,
-    writeln
+    writeln,
 };
 
 const REG_EEPROM: u32 = 0x0014;
@@ -78,9 +112,9 @@ const REG_RCTL: u32 = 0x0100;
 //// TX/RX Device Control
 /* Transmit Control */
 //  const TCTL_RST: u32 = 0x00000001;    /* software reset */
-const TCTL_EN: u32 = 0x00000002;    /* enable tx */
+const TCTL_EN: u32 = 0x00000002; /* enable tx */
 //  const TCTL_BCE: u32 = 0x00000004;    /* busy check enable */
-const TCTL_PSP: u32 = 0x00000008;    /* pad short packets */
+const TCTL_PSP: u32 = 0x00000008; /* pad short packets */
 //  const TCTL_CT: u32 = 0x00000ff0;    /* collision threshold */
 const TCTL_CT_SHIFT: u32 = 4;
 //  const TCTL_COLD: u32 = 0x003ff000;    /* collision distance */
@@ -90,10 +124,9 @@ const TCTL_COLD_SHIFT: u32 = 12;
 //  const TCTL_RTLC: u32 = 0x01000000;    /* Re-transmit on late collision */
 //  const TCTL_NRTU: u32 = 0x02000000;    /* No Re-transmit on underrun */
 //  const TCTL_MULR: u32 = 0x10000000;    /* Multiple request support */
-
 /* Receive Control */
 //  const RCTL_RST: u32 = 0x00000001;    /* Software reset */
-const RCTL_EN: u32 = 0x00000002;    /* enable */
+const RCTL_EN: u32 = 0x00000002; /* enable */
 //  const RCTL_SBP: u32 = 0x00000004;    /* store bad packet */
 //  const RCTL_UPE: u32 = 0x00000008;    /* unicast promiscuous enable */
 //  const RCTL_MPE: u32 = 0x00000010;    /* multicast promiscuous enab */
@@ -113,7 +146,7 @@ const RCTL_EN: u32 = 0x00000002;    /* enable */
 //  const RCTL_MO_2: u32 = 0x00002000;    /* multicast offset 13:2 */
 //  const RCTL_MO_3: u32 = 0x00003000;    /* multicast offset 15:4 */
 //  const RCTL_MDR: u32 = 0x00004000;    /* multicast desc ring 0 */
-const RCTL_BAM: u32 = 0x00008000;    /* broadcast enable */
+const RCTL_BAM: u32 = 0x00008000; /* broadcast enable */
 /* these buffer sizes are valid if E1000_RCTL_BSEX is 0 */
 //  const RCTL_SZ_2048: u32 = 0x00000000;    /* rx buffer size 2048 */
 //  const RCTL_SZ_1024: u32 = 0x00010000;    /* rx buffer size 1024 */
@@ -122,17 +155,16 @@ const RCTL_BAM: u32 = 0x00008000;    /* broadcast enable */
 /* these buffer sizes are valid if E1000_RCTL_BSEX is 1 */
 //  const RCTL_SZ_16384: u32 = 0x00010000;    /* rx buffer size 16384 */
 //  const RCTL_SZ_8192: u32 = 0x00020000;    /* rx buffer size 8192 */
-const RCTL_SZ_4096: u32 = 0x00030000;    /* rx buffer size 4096 */
+const RCTL_SZ_4096: u32 = 0x00030000; /* rx buffer size 4096 */
 //  const RCTL_VFE: u32 = 0x00040000;    /* vlan filter enable */
 //  const RCTL_CFIEN: u32 = 0x00080000;    /* canonical form enable */
 //  const RCTL_CFI: u32 = 0x00100000;    /* canonical form indicator */
 //  const RCTL_DPF: u32 = 0x00400000;    /* discard pause frames */
 //  const RCTL_PMCF: u32 = 0x00800000;    /* pass MAC control frames */
-const RCTL_BSEX: u32 = 0x02000000;    /* Buffer size extension */
-const RCTL_SECRC: u32 = 0x04000000;    /* Strip Ethernet CRC */
+const RCTL_BSEX: u32 = 0x02000000; /* Buffer size extension */
+const RCTL_SECRC: u32 = 0x04000000; /* Strip Ethernet CRC */
 //  const RCTL_FLXBUF_MASK: u32 = 0x78000000;    /* Flexible buffer size */
 //  const RCTL_FLXBUF_SHIFT: u32 = 27;            /* Flexible buffer shift */
-
 fn init() -> ProcessIdentifier {
     let mypid: ProcessIdentifier = match pm::getpid() {
         Ok(pid) => pid,
@@ -176,7 +208,7 @@ impl MMIO {
     }
 
     fn read(&self, address_offset: u32) -> u32 {
-        syslog::debug!("reading {:#x}", self.base_address + address_offset);
+        //syslog::debug!("reading {:#x}", self.base_address + address_offset);
         unsafe { core::ptr::read_volatile((self.base_address + address_offset) as *const u32) }
     }
 
@@ -216,7 +248,6 @@ fn read_eeprom(mmio: &MMIO, address: u8) -> u16 {
 
     (tmp >> 16) as u16
 }
-
 
 #[allow(dead_code)]
 pub struct E1000Device {
@@ -303,10 +334,7 @@ impl E1000Device {
             },
         }
 
-        let mut dma_man = DmaManager::new(
-            DmaInfo::new(8, 4096),
-            DMA_BASE_ADDRESS
-        );
+        let mut dma_man = DmaManager::new(DmaInfo::new(8, 4096), DMA_BASE_ADDRESS);
 
         if let Err(e) = dma_man.alloc() {
             panic!("Failed to allocate DMA memory: {:?}", e);
@@ -317,25 +345,30 @@ impl E1000Device {
         let rx_ring = Descriptor::rx_from(&dma_man);
 
         // Write TX ring info to e1000 registers
-        let tx_addr = dma_man.info().tx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
+        let tx_addr = dma_man.info().tx_ring_offset()
+            + dma_man
+                .base_paddr()
+                .expect("Failed to get DMA physical addr");
         mmio.write(REG_TDBAH, 0);
         mmio.write(REG_TDBAL, tx_addr as u32);
         mmio.write(REG_TDLEN, dma_man.info().ring_len() as u32);
         mmio.write(REG_TDT, 0);
         mmio.write(REG_TDH, 0);
         mmio.write(
-            REG_TCTL, 
-            TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT)
-            // enable | padShortPackets | collision stuff
+            REG_TCTL,
+            TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT), // enable | padShortPackets | collision stuff
         );
         mmio.write(
             REG_TIPG,
-            10 | (8<<10) | (6<<20) // Intel magic number
+            10 | (8 << 10) | (6 << 20), // Intel magic number
         );
         syslog::trace!("TX Ring Info written to e1000 MMIO");
 
         // Write RX ring info to e1000 registers
-        let rx_addr = dma_man.info().rx_ring_offset() + dma_man.base_paddr().expect("Failed to get DMA physical addr");
+        let rx_addr = dma_man.info().rx_ring_offset()
+            + dma_man
+                .base_paddr()
+                .expect("Failed to get DMA physical addr");
         mmio.write(REG_RDBAH, 0);
         mmio.write(REG_RDBAL, rx_addr as u32);
         mmio.write(REG_RDLEN, dma_man.info().ring_len() as u32);
@@ -343,8 +376,7 @@ impl E1000Device {
         mmio.write(REG_RDT, (dma_man.info().desc_count() as u32) - 1);
         mmio.write(
             REG_RCTL,
-            RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC
-            // enable | broadcast | 4096byte rx buffer
+            RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC, // enable | broadcast | 4096byte rx buffer
         );
         syslog::trace!("RX Ring Info written to e1000 MMIO");
 
@@ -354,36 +386,32 @@ impl E1000Device {
         }
         syslog::trace!("Multicast table array set up");
 
-        Self { mmio, dma_man, mac_addr: mac, tx_ring, rx_ring }
+        Self {
+            mmio,
+            dma_man,
+            mac_addr: mac,
+            tx_ring,
+            rx_ring,
+        }
     }
 
-    pub fn transmit_frame (
-        &mut self,
-        packet: &[u8],
-
-    ) -> Result<usize, Error> {
-
+    pub fn transmit_frame(&mut self, packet: &[u8]) -> Result<usize, Error> {
         if packet.len() > self.dma_man.info().buff_len() as usize {
-            return Err(Error::new(
-                ErrorCode::InvalidArgument,
-                "packet exceeds e1000 buffer size",
-            ));
+            return Err(Error::new(ErrorCode::InvalidArgument, "packet exceeds e1000 buffer size"));
         }
 
         let index = self.mmio.read(REG_TDT);
         let desc = self.tx_ring[index as usize];
 
-        let tx_rsv_sta = unsafe { (& *desc).get_tx_rsv_sta() };
+        let tx_rsv_sta = unsafe { (&*desc).get_tx_rsv_sta() };
 
-        if tx_rsv_sta & 1 == 0 {         // Check [Descriptor Done]
-            return Err(Error::new(
-                ErrorCode::TryAgain,
-                "tx descriptor still owned by device"
-            ));
+        if tx_rsv_sta & 1 == 0 {
+            // Check [Descriptor Done]
+            return Err(Error::new(ErrorCode::TryAgain, "tx descriptor still owned by device"));
         }
 
-        unsafe { 
-            let buff_address = (& *desc).buff_address();
+        unsafe {
+            let buff_address = (&*desc).buff_address();
             let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
             buffer.copy_from_slice(packet);
         };
@@ -400,36 +428,33 @@ impl E1000Device {
 
         fence(Ordering::SeqCst);
 
-        self.mmio.write(REG_TDT, (index+1) % self.dma_man.info().desc_count() as u32); 
-        let _ = self.mmio.read(REG_STAT);        // Flush
+        self.mmio
+            .write(REG_TDT, (index + 1) % self.dma_man.info().desc_count() as u32);
+        let _ = self.mmio.read(REG_STAT); // Flush
 
         Ok(packet.len())
     }
 
-    pub fn receive_frame (
-        &mut self,
-
-    ) -> Option<Vec<u8>> {
-
+    pub fn receive_frame(&mut self) -> Option<Vec<u8>> {
         let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().ring_len() as u32;
         let desc = self.rx_ring[index as usize];
 
         let frame = {
+            let status = unsafe { (&*desc).get_rx_status() };
 
-            let status = unsafe { (& *desc).get_rx_status() };
-
-            if status & 1 == 0 {         // Check [Descriptor Done]
+            if status & 1 == 0 {
+                // Check [Descriptor Done]
                 return None;
             }
 
-            let frame = if status & 0b10 == 0 {      // Check [End Of Packet]
+            let frame = if status & 0b10 == 0 {
+                // Check [End Of Packet]
                 None
-
             } else {
-                let rx_length = unsafe {  (& *desc).get_rx_length() };
+                let rx_length = unsafe { (&*desc).get_rx_length() };
 
                 let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
-                let buffer = unsafe { (& *desc).buff_address() };
+                let buffer = unsafe { (&*desc).buff_address() };
 
                 Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
             };
@@ -444,7 +469,10 @@ impl E1000Device {
             };
 
             if frame.is_some() {
-                syslog::info!("E1000: received a frame of length {:?}", frame.as_ref().unwrap().len());
+                syslog::info!(
+                    "E1000: received a frame of length {:?}",
+                    frame.as_ref().unwrap().len()
+                );
             }
 
             frame
@@ -452,9 +480,20 @@ impl E1000Device {
 
         fence(Ordering::SeqCst);
         self.mmio.write(REG_RDT, index);
-        let _ = self.mmio.read(REG_STAT);        // Flush
+        let _ = self.mmio.read(REG_STAT); // Flush
 
         frame
+    }
+
+    pub fn mac_address(&self) -> EthernetAddress {
+        return EthernetAddress([
+            self.mac_addr[0] as u8,
+            self.mac_addr[1] as u8,
+            self.mac_addr[2] as u8,
+            self.mac_addr[3] as u8,
+            self.mac_addr[4] as u8,
+            self.mac_addr[5] as u8,
+        ]);
     }
 }
 
@@ -498,8 +537,12 @@ impl Device for E1000Device {
     where
         Self: 'a;
 
-    fn receive(&mut self, _timestamp: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+    fn receive(
+        &mut self,
+        _timestamp: smoltcp::time::Instant,
+    ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         let packet = self.receive_frame()?;
+        syslog::info!("E1000 recebeu um frame de {} bytes!", packet.len());
         Some((E1000RxToken { buffer: packet }, E1000TxToken { device: self }))
     }
 
@@ -515,17 +558,101 @@ impl Device for E1000Device {
         capabilities.checksum = Default::default();
         capabilities
     }
-
 }
+
+fn get_instant() -> Instant {
+    // Pega o tempo do kernel do Nanvix
+    let now = Time::now().expect("Falha ao obter o tempo do sistema");
+
+    // Converte segundos e nanosegundos para milissegundos totais
+    let millis = (now.seconds() * 1000) + (now.nanoseconds() as u64 / 1_000_000);
+
+    // Cria o Instant do smoltcp a partir dos milissegundos.
+    // Nota: Dependendo da versão do smoltcp, from_millis pede um i64 ou u64.
+    // Fazemos o cast para i64 (o padrão na maioria das versões recentes).
+    Instant::from_millis(millis as i64)
+}
+
+const IP: &str = "10.0.2.15";
+const GATEWAY: &str = "10.0.2.2"; // QEMU user networking gateway
+const PORT: u16 = 5555;
 
 #[no_mangle]
 #[allow(unused_mut, unused_variables)]
 pub fn main() {
-
     let mut e1000 = E1000Device::init();
 
+    let mut config = Config::new(e1000.mac_address().into());
+    config.random_seed = 0x1234;
+
+    let mut iface = Interface::new(config, &mut e1000, get_instant());
+
+    iface.update_ip_addrs(|ip_addrs| {
+        ip_addrs
+            .push(IpCidr::new(IpAddress::from_str(IP).unwrap(), 24))
+            .unwrap();
+    });
+
+    iface
+        .routes_mut()
+        .add_default_ipv4_route(Ipv4Address::from_str(GATEWAY).unwrap())
+        .unwrap();
+
+    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
+    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
+    let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
+
+    let mut sockets = SocketSet::new(vec![]);
+    let tcp_handle = sockets.add(tcp_socket);
+
+    let mut tcp_active = false;
+
     syslog::trace!("Entering polling loop...");
+
     loop {
-        let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_secs(1));
+        let timestamp = get_instant();
+        iface.poll(timestamp, &mut e1000, &mut sockets);
+
+        let socket = sockets.get_mut::<tcp::Socket>(tcp_handle);
+        if !socket.is_open() {
+            syslog::info!("listening on port {}...", PORT);
+            socket.listen(PORT).unwrap();
+        }
+
+        if socket.is_active() && !tcp_active {
+            syslog::info!("tcp:{} connected", PORT);
+        } else if !socket.is_active() && tcp_active {
+            syslog::info!("tcp:{} disconnected", PORT);
+        }
+        tcp_active = socket.is_active();
+        if socket.may_recv() {
+            let data = socket
+                .recv(|buffer| {
+                    let recvd_len = buffer.len();
+                    if !buffer.is_empty() {
+                        syslog::info!("tcp:{} recv {} bytes: {:?}", PORT, recvd_len, buffer);
+                        let mut lines = buffer
+                            .split(|&b| b == b'\n')
+                            .map(ToOwned::to_owned)
+                            .collect::<Vec<_>>();
+                        for line in lines.iter_mut() {
+                            line.reverse();
+                        }
+                        let data = lines.join(&b'\n');
+                        (recvd_len, data)
+                    } else {
+                        (0, vec![])
+                    }
+                })
+                .unwrap();
+            if socket.can_send() && !data.is_empty() {
+                syslog::info!("tcp:{} send data: {:?}", PORT, data);
+                socket.send_slice(&data[..]).unwrap();
+            }
+        } else if socket.may_send() {
+            syslog::info!("tcp:{} close", PORT);
+            socket.close();
+            break;
+        }
     }
 }
