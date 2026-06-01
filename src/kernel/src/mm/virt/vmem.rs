@@ -362,7 +362,7 @@ impl Vmem {
         };
 
         // Map the page to the target virtual address space with cache disabled.
-        page_table.map(PageAddress::new(vaddr), uframe.address(), false, false, false, access)?;
+        page_table.map(PageAddress::new(vaddr), uframe.address(), false, true, false, access)?;
 
         Ok(())
     }

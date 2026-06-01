@@ -94,7 +94,8 @@ function run_qemu
 			machine="-machine pc"
 			stdout="-debugcon stdio"
 			smp=""
-			extra="-trace \"net_*\" -trace \"e1000_*\" -trace \"slirp_*\""
+			# -trace events=events.txt,file=qemu-trace.log
+			extra="-monitor telnet:127.0.0.1:55555,server,nowait"
 			;;
 		"qemu-pc-smp")
 			machine="-machine pc"
