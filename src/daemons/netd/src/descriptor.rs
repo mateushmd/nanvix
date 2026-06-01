@@ -15,6 +15,8 @@ use core::{
 
 use alloc::vec::Vec;
 
+use ::sys::error::Error;
+
 enum DescType {
     Tx,
     Rx,
@@ -44,11 +46,17 @@ pub struct Descriptor {
     fields: u64,
 }
 
+const _: () = assert!(core::mem::size_of::<Descriptor>() == 16);
+
 #[allow(dead_code)]
 impl Descriptor {
-    pub fn buff_address(&self) -> u64 {
-        self.buff_address
+    pub fn set_buff_address(&mut self, value: u64) {
+        self.buff_address = value;
     }
+
+	pub fn get_buff_address(&self) -> u64 {
+		self.buff_address
+	}
 
     // Tx
     pub fn set_tx_special(&mut self, value: u16) {
@@ -130,7 +138,7 @@ impl Descriptor {
 
     pub fn set_rx_chksum(&mut self, value: u16) {
         self.fields &= 0xffffffff_0000ffff;
-        self.fields |= (value as u64) << 24;
+        self.fields |= (value as u64) << 16;
     }
 
     pub fn set_rx_length(&mut self, value: u16) {
@@ -155,7 +163,7 @@ impl Descriptor {
 
     pub fn get_rx_chksum(&self) -> u16 {
         let result = self.fields & 0x00000000_ffff0000;
-        (result >> 24) as u16
+        (result >> 16) as u16
     }
 
     pub fn get_rx_length(&self) -> u16 {
@@ -163,8 +171,8 @@ impl Descriptor {
         result as u16
     }
 
-    fn from(dma_manager: &DmaManager, dtype: DescType) -> Vec<*mut Descriptor> {
-        let info = dma_manager.info();
+	fn from(dma_manager: &DmaManager, dtype: DescType) -> Result<Vec<*mut Descriptor>, Error> {
+		let info = dma_manager.info();
 
         let desc_count = dma_manager.info().desc_count() as usize;
         let mut descs: Vec<*mut Descriptor> = Vec::with_capacity(desc_count);
@@ -174,34 +182,34 @@ impl Descriptor {
                 (dma_manager.base_vaddr() + dtype.ring_offset(info) + (i * crate::DESCRIPTOR_SIZE))
                     as *mut Descriptor;
 
-            match dtype {
-                DescType::Tx => unsafe {
-                    (&mut *desc).set_tx_rsv_sta(1); // Set DD = 1
-                },
-                DescType::Rx => unsafe {
-                    let desc_ref = &mut *desc;
-                    desc_ref.set_rx_status(0);
-                    desc_ref.set_rx_length(0);
-                    desc_ref.set_rx_errors(0);
-                },
+			unsafe {
+				let desc_ref = &mut *desc;
+				desc_ref.set_buff_address(
+					(dma_manager.base_paddr()? + dtype.buff_offset(info)
+					+ (i * info.buff_len() as usize)) as u64
+				);
+
+				match dtype {
+					DescType::Tx => desc_ref.set_tx_rsv_sta(1),     // Set DD = 1
+					DescType::Rx => {
+						desc_ref.set_rx_status(0);
+						desc_ref.set_rx_length(0);
+						desc_ref.set_rx_errors(0);
+					}
+				}
             }
             descs.push(desc);
-        }
-        descs
-    }
+		}
+		Ok(descs)
+	}
 
-    pub fn tx_from(dma_manager: &DmaManager) -> Vec<*mut Descriptor> {
-        Self::from(dma_manager, DescType::Tx)
-    }
+	pub fn tx_from(dma_manager: &DmaManager) -> Result<Vec<*mut Descriptor>, Error> {
+		Ok(Self::from(dma_manager, DescType::Tx)?)
+	}
 
-    pub fn rx_from(dma_manager: &DmaManager) -> Vec<*mut Descriptor> {
-        Self::from(dma_manager, DescType::Rx)
-    }
-
-    #[allow(dead_code)]
-    pub unsafe fn read_buff_address(&self) -> u64 {
-        self.buff_address
-    }
+	pub fn rx_from(dma_manager: &DmaManager) -> Result<Vec<*mut Descriptor>, Error> {
+		Ok(Self::from(dma_manager, DescType::Rx)?)
+	}
 
     #[allow(dead_code)]
     pub unsafe fn read_fields(&self) -> u64 {

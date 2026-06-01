@@ -11,37 +11,47 @@ impl DmaInfo {
         }
     }
 
-    /// Number of descriptors of the same type
-    pub fn desc_count(&self) -> u8 {
-        self.desc_count
-    }
+    /// Number of descriptors of the same type.
+	pub fn desc_count(&self) -> u8 {
+		self.desc_count
+	}
 
-    pub fn buff_len(&self) -> u16 {
-        self.buff_len
-    }
+	/// Length of a single buffer in bytes.
+	pub fn buff_len(&self) -> u16 {
+		self.buff_len
+	}
 
-    pub fn dma_len(&self) -> usize {
-        2 * (self.desc_count() as usize) * (crate::DESCRIPTOR_SIZE + (self.buff_len() as usize))
-    }
+	/// Length of the DMA region required.
+	pub fn dma_len(&self) -> usize {
+		2 * (self.desc_count() as usize) *
+			(crate::DESCRIPTOR_SIZE + (self.buff_len() as usize))
+	}
 
-    pub fn ring_len(&self) -> usize {
-        (self.desc_count() as usize) * crate::DESCRIPTOR_SIZE
-    }
+	/// Length of a ring for a single type of descriptor.
+	///
+	/// To see the size for both rings, multiply the result by 2.
+	pub fn ring_len(&self) -> usize {
+		(self.desc_count() as usize) * crate::DESCRIPTOR_SIZE
+	}
 
-    pub fn tx_ring_offset(&self) -> usize {
-        0
-    }
+	/// The offset in bytes of the TX ring.
+	pub fn tx_ring_offset(&self) -> usize {
+		0
+	}
+	
+	/// The offset in bytes of the RX ring.
+	pub fn rx_ring_offset(&self) -> usize {
+		self.tx_ring_offset() + self.ring_len()
+	}
 
-    pub fn rx_ring_offset(&self) -> usize {
-        self.tx_ring_offset() + self.ring_len()
-    }
+	/// The offset of the TX buffer region in bytes.
+	#[allow(dead_code)]
+	pub fn tx_buff_offset(&self) -> usize {
+		self.rx_ring_offset() + self.ring_len()
+	}
 
-    #[allow(dead_code)]
-    pub fn tx_buff_offset(&self) -> usize {
-        self.rx_ring_offset() + self.ring_len()
-    }
-
-    pub fn rx_buff_offset(&self) -> usize {
-        self.tx_buff_offset() + (self.buff_len() as usize) * (self.desc_count() as usize)
-    }
+	/// The offset of the RX buffer region in bytes.
+	pub fn rx_buff_offset(&self) -> usize {
+		self.tx_buff_offset() + (self.buff_len() as usize) * (self.desc_count() as usize)
+	}
 }

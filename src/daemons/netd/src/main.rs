@@ -60,6 +60,7 @@ use smoltcp::{
 
 use ::core::{
     convert::From,
+	hint::spin_loop,
     module_path,
     option::{
         Option,
@@ -213,7 +214,7 @@ impl MMIO {
     }
 
     fn write(&self, address_offset: u32, value: u32) {
-        syslog::debug!("writing to {:#x}", self.base_address + address_offset);
+        syslog::debug!("writing {:#x} to {:#x}", value, self.base_address + address_offset);
         unsafe {
             core::ptr::write_volatile((self.base_address + address_offset) as *mut u32, value);
         }
@@ -273,6 +274,12 @@ impl E1000Device {
         let ctl = mmio.read(REG_CTL);
         mmio.write(REG_CTL, ctl | CTL_RST);
 
+		while mmio.read(REG_CTL) & CTL_RST != 0 {
+			spin_loop();			
+		}
+
+		syslog::info!("E1000 reseted successfully!");
+
         fence(Ordering::Release);
 
         match detect_eeprom(&mmio) {
@@ -307,8 +314,16 @@ impl E1000Device {
         let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
         let rah: u32 = temp3 as u32;
         mmio.write(REG_RAL, ral);
-        mmio.write(REG_RAH, rah);
+        // mmio.write(REG_RAH, rah);
         mmio.write(REG_RAH, rah | (1 << 31));
+
+        fence(Ordering::SeqCst);
+
+		let ral_readback = mmio.read(REG_RAL);
+		syslog::info!("HARDWARE TRUTH - RAl reads as: {:#010x}", ral_readback);
+
+		let rah_readback = mmio.read(REG_RAH);
+		syslog::info!("HARDWARE TRUTH - RAH reads as: {:#010x}", rah_readback);
 
         // Start link & Set ASDE
         let ctl = mmio.read(REG_CTL);
@@ -341,8 +356,8 @@ impl E1000Device {
         }
         syslog::trace!("DMA Memory successfully allocated!");
 
-        let tx_ring = Descriptor::tx_from(&dma_man);
-        let rx_ring = Descriptor::rx_from(&dma_man);
+        let tx_ring = Descriptor::tx_from(&dma_man).expect("DMA region does not exist");
+        let rx_ring = Descriptor::rx_from(&dma_man).expect("DMA region does not exist");
 
         // Write TX ring info to e1000 registers
         let tx_addr = dma_man.info().tx_ring_offset()
@@ -410,8 +425,8 @@ impl E1000Device {
             return Err(Error::new(ErrorCode::TryAgain, "tx descriptor still owned by device"));
         }
 
-        unsafe {
-            let buff_address = (&*desc).buff_address();
+        unsafe { 
+            let buff_address = (& *desc).get_buff_address();
             let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
             buffer.copy_from_slice(packet);
         };
@@ -454,7 +469,8 @@ impl E1000Device {
                 let rx_length = unsafe { (&*desc).get_rx_length() };
 
                 let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
-                let buffer = unsafe { (&*desc).buff_address() };
+
+                let buffer = unsafe { (& *desc).get_buff_address() };
 
                 Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
             };
