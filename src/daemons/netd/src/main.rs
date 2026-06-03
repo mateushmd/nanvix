@@ -34,7 +34,7 @@ use ::sys::{
     mm::MmioRegionInfo,
     pm::ProcessIdentifier,
 };
-use core::str::FromStr;
+
 use smoltcp::{
     iface::{
         Config,
@@ -67,11 +67,13 @@ use ::core::{
         Option::*,
     },
     panic,
+	ptr::write_bytes,
     result::{
         Result,
         Result::*,
     },
     slice,
+	str::FromStr,
     sync::atomic::{
         fence,
         Ordering,
@@ -84,6 +86,9 @@ const REG_CTL: u32 = 0x0;
 const REG_STAT: u32 = 0x008;
 const REG_RAL: u32 = 0x5400;
 const REG_RAH: u32 = 0x5404;
+const REG_IMS: u32 = 0x00D0;
+const REG_RDTR: u32 = 0x2820;
+const REG_RADV: u32 = 0x282C;
 
 const CTL_RST: u32 = 1 << 26; // Reset
 const CTL_SLU: u32 = 0x0040; // Set Link Up
@@ -270,13 +275,18 @@ impl E1000Device {
 
         let mmio = MMIO::new(base as u32);
 
+		// Disabling interrupts
+		mmio.write(REG_IMS, 0);
+
         // Reset card
         let ctl = mmio.read(REG_CTL);
         mmio.write(REG_CTL, ctl | CTL_RST);
-
 		while mmio.read(REG_CTL) & CTL_RST != 0 {
 			spin_loop();			
 		}
+
+		// Redisabling interrupts
+		mmio.write(REG_IMS, 0);
 
 		syslog::info!("E1000 reseted successfully!");
 
@@ -310,21 +320,6 @@ impl E1000Device {
             mac[5]
         );
 
-        // Write MAC to Receive Address
-        let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
-        let rah: u32 = temp3 as u32;
-        mmio.write(REG_RAL, ral);
-        // mmio.write(REG_RAH, rah);
-        mmio.write(REG_RAH, rah | (1 << 31));
-
-        fence(Ordering::SeqCst);
-
-		let ral_readback = mmio.read(REG_RAL);
-		syslog::info!("HARDWARE TRUTH - RAl reads as: {:#010x}", ral_readback);
-
-		let rah_readback = mmio.read(REG_RAH);
-		syslog::info!("HARDWARE TRUTH - RAH reads as: {:#010x}", rah_readback);
-
         // Start link & Set ASDE
         let ctl = mmio.read(REG_CTL);
         mmio.write(REG_CTL, ctl | CTL_SLU | CTL_ASDE);
@@ -356,6 +351,14 @@ impl E1000Device {
         }
         syslog::trace!("DMA Memory successfully allocated!");
 
+		unsafe {
+			write_bytes(
+				dma_man.base_vaddr() as *mut u8,
+				0,
+				dma_man.info().ring_len() * 2
+			);	
+		}
+
         let tx_ring = Descriptor::tx_from(&dma_man).expect("DMA region does not exist");
         let rx_ring = Descriptor::rx_from(&dma_man).expect("DMA region does not exist");
 
@@ -369,15 +372,6 @@ impl E1000Device {
         mmio.write(REG_TDLEN, dma_man.info().ring_len() as u32);
         mmio.write(REG_TDT, 0);
         mmio.write(REG_TDH, 0);
-        mmio.write(
-            REG_TCTL,
-            TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT), // enable | padShortPackets | collision stuff
-        );
-        mmio.write(
-            REG_TIPG,
-            10 | (8 << 10) | (6 << 20), // Intel magic number
-        );
-        syslog::trace!("TX Ring Info written to e1000 MMIO");
 
         // Write RX ring info to e1000 registers
         let rx_addr = dma_man.info().rx_ring_offset()
@@ -389,17 +383,41 @@ impl E1000Device {
         mmio.write(REG_RDLEN, dma_man.info().ring_len() as u32);
         mmio.write(REG_RDH, 0);
         mmio.write(REG_RDT, (dma_man.info().desc_count() as u32) - 1);
-        mmio.write(
-            REG_RCTL,
-            RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC, // enable | broadcast | 4096byte rx buffer
-        );
-        syslog::trace!("RX Ring Info written to e1000 MMIO");
+
+        // Write MAC to Receive Address
+        let ral: u32 = ((temp2 as u32) << 16) | temp1 as u32;
+        let rah: u32 = temp3 as u32;
+        mmio.write(REG_RAL, ral);
+        mmio.write(REG_RAH, rah | (1 << 31));
 
         // Setup multicast table array
         for i in 0..128 {
             mmio.write(REG_MTA + (i * 4), 0);
         }
-        syslog::trace!("Multicast table array set up");
+
+        mmio.write(
+            REG_TCTL,
+            TCTL_EN | TCTL_PSP | (0x10 << TCTL_CT_SHIFT) | (0x40 << TCTL_COLD_SHIFT), // enable | padShortPackets | collision stuff
+        );
+        mmio.write(
+            REG_TIPG,
+            10 | (8 << 10) | (6 << 20), // Intel magic number
+        );
+
+        mmio.write(
+            REG_RCTL,
+            RCTL_EN | RCTL_BAM | RCTL_SZ_4096 | RCTL_BSEX | RCTL_SECRC, // enable | broadcast | 4096byte rx buffer
+        );
+
+		// Intel docs recommends not setting certain bit ranges of these registers
+		// so we forcefully reset them as a safety measure
+		mmio.write(REG_RDTR, 0);
+		mmio.write(REG_RADV, 0);
+
+		// Receiver descriptor write back
+		mmio.write(REG_IMS, 1 << 7);
+
+        syslog::trace!("Register setup done");
 
         Self {
             mmio,
@@ -451,7 +469,7 @@ impl E1000Device {
     }
 
     pub fn receive_frame(&mut self) -> Option<Vec<u8>> {
-        let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().ring_len() as u32;
+        let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().desc_count() as u32;
         let desc = self.rx_ring[index as usize];
 
         let frame = {
