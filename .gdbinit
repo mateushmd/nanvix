@@ -15,7 +15,8 @@ set detach-on-fork
 #b _ap_trampoline
 #b kmain
 add-symbol-file bin/netd.elf
-b src/daemons/netd/src/main.rs:56
+# b src/daemons/netd/src/main.rs:56
+b src/daemons/netd/src/main.rs:420
 
 define hook-stop
 	if $_isvoid ($_exitcode) != 1
