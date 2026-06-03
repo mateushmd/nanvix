@@ -1,5 +1,7 @@
 #![no_std]
 #![no_main]
+#![allow(clippy::all)]
+#[allow(unused_imports)]
 
 extern crate alloc;
 extern crate libc_string;
@@ -8,6 +10,7 @@ extern crate nvx;
 mod descriptor;
 mod dma_info;
 mod dma_manager;
+mod volatile_cell;
 
 const DESCRIPTOR_SIZE: usize = 16;
 use crate::{
@@ -17,8 +20,10 @@ use crate::{
 };
 use syscall::safe::time::Time;
 
+#[allow(unused_imports)]
 use ::alloc::{
     borrow::ToOwned,
+	boxed::Box,
     vec,
     vec::Vec,
 };
@@ -35,6 +40,7 @@ use ::sys::{
     pm::ProcessIdentifier,
 };
 
+#[allow(unused_imports)]
 use smoltcp::{
     iface::{
         Config,
@@ -58,6 +64,7 @@ use smoltcp::{
     },
 };
 
+#[allow(unused_imports)]
 use ::core::{
     convert::From,
 	hint::spin_loop,
@@ -219,7 +226,7 @@ impl MMIO {
     }
 
     fn write(&self, address_offset: u32, value: u32) {
-        syslog::debug!("writing {:#x} to {:#x}", value, self.base_address + address_offset);
+        //syslog::debug!("writing {:#x} to {:#x}", value, self.base_address + address_offset);
         unsafe {
             core::ptr::write_volatile((self.base_address + address_offset) as *mut u32, value);
         }
@@ -262,6 +269,8 @@ pub struct E1000Device {
     mac_addr: [u16; 6],
     tx_ring: Vec<*mut Descriptor>,
     rx_ring: Vec<*mut Descriptor>,
+	tx_bufs: Vec<usize>,
+	rx_bufs: Vec<usize>
 }
 
 #[allow(dead_code)]
@@ -359,8 +368,8 @@ impl E1000Device {
 			);	
 		}
 
-        let tx_ring = Descriptor::tx_from(&dma_man).expect("DMA region does not exist");
-        let rx_ring = Descriptor::rx_from(&dma_man).expect("DMA region does not exist");
+        let (tx_ring, tx_bufs) = Descriptor::tx_from(&dma_man).expect("DMA region does not exist");
+        let (rx_ring, rx_bufs) = Descriptor::rx_from(&dma_man).expect("DMA region does not exist");
 
         // Write TX ring info to e1000 registers
         let tx_addr = dma_man.info().tx_ring_offset()
@@ -425,98 +434,95 @@ impl E1000Device {
             mac_addr: mac,
             tx_ring,
             rx_ring,
+			tx_bufs,
+			rx_bufs
         }
     }
 
     pub fn transmit_frame(&mut self, packet: &[u8]) -> Result<usize, Error> {
-        if packet.len() > self.dma_man.info().buff_len() as usize {
-            return Err(Error::new(ErrorCode::InvalidArgument, "packet exceeds e1000 buffer size"));
-        }
+		if packet.len() > self.dma_man.info().buff_len() as usize {
+			return Err(Error::new(ErrorCode::InvalidArgument, "packet exceeds e1000 buffer size"));
+		}
 
-        let index = self.mmio.read(REG_TDT);
-        let desc = self.tx_ring[index as usize];
+		let index = self.mmio.read(REG_TDT) as usize;
 
-        let tx_rsv_sta = unsafe { (&*desc).get_tx_rsv_sta() };
+		unsafe {
+			let desc_ref = &mut *self.tx_ring[index];
+			let buff_address = self.tx_bufs[index];
 
-        if tx_rsv_sta & 1 == 0 {
-            // Check [Descriptor Done]
-            return Err(Error::new(ErrorCode::TryAgain, "tx descriptor still owned by device"));
-        }
+			// Check [Descriptor Done]
+			if desc_ref.get_tx_rsv_sta() & 1 == 0 {
+				return Err(Error::new(ErrorCode::TryAgain, "tx descriptor still owned by device"));
+			}
 
-        unsafe { 
-            let buff_address = (& *desc).get_buff_address();
-            let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
-            buffer.copy_from_slice(packet);
-        };
+			let buffer = slice::from_raw_parts_mut(buff_address as *mut u8, packet.len());
+			buffer.copy_from_slice(packet);
 
-        unsafe {
-            let desc_ref = &mut *desc;
-            desc_ref.set_tx_length(packet.len() as u16);
-            desc_ref.set_tx_cso(0);
-            desc_ref.set_tx_cmd(0b1001);
-            desc_ref.set_tx_rsv_sta(0);
-            desc_ref.set_tx_css(0);
-            desc_ref.set_tx_special(0);
-        }
+			desc_ref.set_tx_length(packet.len() as u16);
+			desc_ref.set_tx_cso(0);
+			desc_ref.set_tx_cmd(0b1001);
+			desc_ref.set_tx_rsv_sta(0);
+			desc_ref.set_tx_css(0);
+			desc_ref.set_tx_special(0);
 
-        fence(Ordering::SeqCst);
+			fence(Ordering::SeqCst);
 
-        self.mmio
-            .write(REG_TDT, (index + 1) % self.dma_man.info().desc_count() as u32);
-        let _ = self.mmio.read(REG_STAT); // Flush
+			self.mmio
+				.write(REG_TDT, (index as u32 + 1) % self.dma_man.info().desc_count() as u32);
+			let _ = self.mmio.read(REG_STAT); // Flush
 
-        Ok(packet.len())
+			Ok(packet.len())
+		}
     }
 
     pub fn receive_frame(&mut self) -> Option<Vec<u8>> {
         let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().desc_count() as u32;
-        let desc = self.rx_ring[index as usize];
+		unsafe {
+			let desc_ref = &mut *self.rx_ring[index as usize];
 
-        let frame = {
-            let status = unsafe { (&*desc).get_rx_status() };
+			let frame = {
+				let status = desc_ref.get_rx_status();
 
-            if status & 1 == 0 {
-                // Check [Descriptor Done]
-                return None;
-            }
+				if status & 1 == 0 {
+					// Check [Descriptor Done]
+					return None;
+				}
 
-            let frame = if status & 0b10 == 0 {
-                // Check [End Of Packet]
-                None
-            } else {
-                let rx_length = unsafe { (&*desc).get_rx_length() };
+				let frame = if status & 0b10 == 0 {
+					// Check [End Of Packet]
+					None
+				} else {
+					let rx_length = desc_ref.get_rx_length();
 
-                let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
+					let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
 
-                let buffer = unsafe { (& *desc).get_buff_address() };
+					let buffer = desc_ref.get_buff_address();
 
-                Some(unsafe { slice::from_raw_parts(buffer as *const u8, length).to_vec() })
-            };
+					Some(slice::from_raw_parts(buffer as *const u8, length).to_vec())
+				};
 
-            unsafe {
-                let desc_ref = &mut *desc;
-                desc_ref.set_rx_length(0);
-                desc_ref.set_rx_chksum(0);
-                desc_ref.set_rx_status(0);
-                desc_ref.set_rx_errors(0);
-                desc_ref.set_rx_special(0);
-            };
+				desc_ref.set_rx_length(0);
+				desc_ref.set_rx_chksum(0);
+				desc_ref.set_rx_status(0);
+				desc_ref.set_rx_errors(0);
+				desc_ref.set_rx_special(0);
 
-            if frame.is_some() {
-                syslog::info!(
-                    "E1000: received a frame of length {:?}",
-                    frame.as_ref().unwrap().len()
-                );
-            }
+				if frame.is_some() {
+					syslog::info!(
+						"E1000: received a frame of length {:?}",
+						frame.as_ref().unwrap().len()
+					);
+				}
 
-            frame
-        };
+				frame
+			};
 
-        fence(Ordering::SeqCst);
-        self.mmio.write(REG_RDT, index);
-        let _ = self.mmio.read(REG_STAT); // Flush
+			fence(Ordering::SeqCst);
+			self.mmio.write(REG_RDT, index);
+			let _ = self.mmio.read(REG_STAT); // Flush
 
-        frame
+			frame
+		}
     }
 
     pub fn mac_address(&self) -> EthernetAddress {
@@ -594,6 +600,7 @@ impl Device for E1000Device {
     }
 }
 
+#[allow(dead_code)]
 fn get_instant() -> Instant {
     // Pega o tempo do kernel do Nanvix
     let now = Time::now().expect("Falha ao obter o tempo do sistema");
@@ -607,10 +614,35 @@ fn get_instant() -> Instant {
     Instant::from_millis(millis as i64)
 }
 
+#[allow(dead_code)]
 const IP: &str = "10.0.2.15";
+#[allow(dead_code)]
 const GATEWAY: &str = "10.0.2.2"; // QEMU user networking gateway
+#[allow(dead_code)]
 const PORT: u16 = 5555;
 
+#[no_mangle]
+pub fn main() {
+	let mut e1000 = E1000Device::init();
+	
+	let ping_frame: Box<[u8]> = Box::new([
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x08, 0x06, 0x00,
+        0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x0a, 0x00,
+        0x02, 0x0f, //10.0.2.15
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x02, 0x02,
+	]);
+
+	let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(500));
+
+	e1000.transmit_frame(&ping_frame).unwrap();
+	e1000.transmit_frame(&ping_frame).unwrap();
+	e1000.transmit_frame(&ping_frame).unwrap();
+	e1000.transmit_frame(&ping_frame).unwrap();
+
+	let _c = 12;
+}
+
+/*
 #[no_mangle]
 #[allow(unused_mut, unused_variables)]
 pub fn main() {
@@ -690,3 +722,4 @@ pub fn main() {
         }
     }
 }
+*/
