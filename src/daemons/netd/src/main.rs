@@ -480,6 +480,7 @@ impl E1000Device {
         let index = (self.mmio.read(REG_RDT) + 1) % self.dma_man.info().desc_count() as u32;
 		unsafe {
 			let desc_ref = &mut *self.rx_ring[index as usize];
+			let buff_address = self.rx_bufs[index as usize];
 
 			let frame = {
 				let status = desc_ref.get_rx_status();
@@ -497,9 +498,7 @@ impl E1000Device {
 
 					let length = core::cmp::min(rx_length, self.dma_man.info().buff_len()) as usize;
 
-					let buffer = desc_ref.get_buff_address();
-
-					Some(slice::from_raw_parts(buffer as *const u8, length).to_vec())
+					Some(slice::from_raw_parts(buff_address as *const u8, length).to_vec())
 				};
 
 				desc_ref.set_rx_length(0);
@@ -507,13 +506,6 @@ impl E1000Device {
 				desc_ref.set_rx_status(0);
 				desc_ref.set_rx_errors(0);
 				desc_ref.set_rx_special(0);
-
-				if frame.is_some() {
-					syslog::info!(
-						"E1000: received a frame of length {:?}",
-						frame.as_ref().unwrap().len()
-					);
-				}
 
 				frame
 			};
@@ -622,6 +614,17 @@ const GATEWAY: &str = "10.0.2.2"; // QEMU user networking gateway
 #[allow(dead_code)]
 const PORT: u16 = 5555;
 
+pub fn print_hex_dump(buf: &[u8], len: usize) {
+    for i in 0..((len - (len % 4)) / 4) {
+		let value =
+			((buf[3 + i * 4] as u32) << 24) |
+			((buf[2 + i * 4] as u32) << 16) |
+			((buf[1 + i * 4] as u32) << 8) |
+			(buf[0 + i * 4] as u32);
+		syslog::info!("0x{:08x}", value);
+	}
+}
+
 #[no_mangle]
 pub fn main() {
 	let mut e1000 = E1000Device::init();
@@ -640,7 +643,22 @@ pub fn main() {
 	e1000.transmit_frame(&ping_frame).unwrap();
 	e1000.transmit_frame(&ping_frame).unwrap();
 
-	let _c = 12;
+	let mut c = 12;
+	loop {
+		if let Some(data) = e1000.receive_frame() {
+			syslog::info!("rx check: received package!");
+			print_hex_dump(&data, data.len());
+		} else {
+			syslog::info!("rx check: no packages!");
+		}
+
+		c -= 1;
+		if c <= 0 {
+			break;
+		}
+
+		let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(100));
+	}
 }
 
 /*

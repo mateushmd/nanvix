@@ -16,10 +16,10 @@ set detach-on-fork
 #b kmain
 add-symbol-file bin/netd.elf
 # b src/daemons/netd/src/main.rs:56
-b src/daemons/netd/src/main.rs:638
-b src/daemons/netd/src/main.rs:639
-b src/daemons/netd/src/main.rs:640
 b src/daemons/netd/src/main.rs:641
+b src/daemons/netd/src/main.rs:642
+b src/daemons/netd/src/main.rs:643
+b src/daemons/netd/src/main.rs:644
 
 define hook-stop
 	if $_isvoid ($_exitcode) != 1
