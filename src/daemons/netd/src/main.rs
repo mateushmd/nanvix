@@ -93,9 +93,12 @@ const REG_CTL: u32 = 0x0;
 const REG_STAT: u32 = 0x008;
 const REG_RAL: u32 = 0x5400;
 const REG_RAH: u32 = 0x5404;
+#[allow(dead_code)]
 const REG_IMS: u32 = 0x00D0;
 const REG_RDTR: u32 = 0x2820;
 const REG_RADV: u32 = 0x282C;
+const REG_ICR: u32 = 0x00C0;
+const REG_IMC: u32 = 0x00D8;
 
 const CTL_RST: u32 = 1 << 26; // Reset
 const CTL_SLU: u32 = 0x0040; // Set Link Up
@@ -285,7 +288,7 @@ impl E1000Device {
         let mmio = MMIO::new(base as u32);
 
 		// Disabling interrupts
-		mmio.write(REG_IMS, 0);
+		mmio.write(REG_IMC, u32::MAX);
 
         // Reset card
         let ctl = mmio.read(REG_CTL);
@@ -295,7 +298,8 @@ impl E1000Device {
 		}
 
 		// Redisabling interrupts
-		mmio.write(REG_IMS, 0);
+		mmio.write(REG_IMC, u32::MAX);
+		_ = mmio.read(REG_ICR);
 
 		syslog::info!("E1000 reseted successfully!");
 
