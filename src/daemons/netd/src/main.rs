@@ -287,9 +287,6 @@ impl E1000Device {
 
         let mmio = MMIO::new(base as u32);
 
-		// Disabling interrupts
-		mmio.write(REG_IMC, u32::MAX);
-
         // Reset card
         let ctl = mmio.read(REG_CTL);
         mmio.write(REG_CTL, ctl | CTL_RST);
@@ -297,13 +294,9 @@ impl E1000Device {
 			spin_loop();			
 		}
 
-		// Redisabling interrupts
-		mmio.write(REG_IMC, u32::MAX);
-		_ = mmio.read(REG_ICR);
+        fence(Ordering::Release);
 
 		syslog::info!("E1000 reseted successfully!");
-
-        fence(Ordering::Release);
 
         match detect_eeprom(&mmio) {
             true => syslog::info!("found eeprom"),
@@ -429,6 +422,10 @@ impl E1000Device {
 
 		// Receiver descriptor write back
 		mmio.write(REG_IMS, 1 << 7);
+
+		// Disabling interrupts
+		mmio.write(REG_IMC, u32::MAX);
+		_ = mmio.read(REG_ICR);
 
         syslog::trace!("Register setup done");
 
