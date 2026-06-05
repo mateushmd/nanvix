@@ -614,15 +614,38 @@ const GATEWAY: &str = "10.0.2.2"; // QEMU user networking gateway
 #[allow(dead_code)]
 const PORT: u16 = 5555;
 
-pub fn print_hex_dump(buf: &[u8], len: usize) {
-    for i in 0..((len - (len % 4)) / 4) {
-		let value =
-			((buf[3 + i * 4] as u32) << 24) |
-			((buf[2 + i * 4] as u32) << 16) |
-			((buf[1 + i * 4] as u32) << 8) |
-			(buf[0 + i * 4] as u32);
-		syslog::info!("0x{:08x}", value);
+pub fn print_hex_dump(buf: &[u8]) {
+	use alloc::string::String;
+	use core::fmt::Write;
+
+	syslog::info!("--- HEX DUMP ({} bytes) ---", buf.len());
+	let mut line = String::new();
+	let mut ascii = String::new();
+
+	for (i, &byte) in buf.iter().enumerate() {
+		if i % 16 == 0 {
+			if !line.is_empty() {
+				syslog::info!("{:04x}: {:48} |{}|", i - 16, line, ascii);
+				line.clear();
+				ascii.clear();
+			}
+		}
+
+		write!(&mut line, "{:02x} ", byte).unwrap();
+
+		if byte >= 32 && byte <= 126 {
+			ascii.push(byte as char);
+		} else {
+			ascii.push('.');
+		}
 	}
+
+	if !line.is_empty() {
+		let remainder = buf.len() % 16;
+		let _padding = if remainder == 0 { 0 } else { 16 - remainder };
+		syslog::info!("{:04x}: {:48} |{}|", buf.len() - remainder, line, ascii);
+	}
+	syslog::info!("------------------------------");
 }
 
 #[no_mangle]
@@ -643,21 +666,20 @@ pub fn main() {
 	e1000.transmit_frame(&ping_frame).unwrap();
 	e1000.transmit_frame(&ping_frame).unwrap();
 
-	let mut c = 12;
+	let mut empty_polls = 0u32;
 	loop {
 		if let Some(data) = e1000.receive_frame() {
 			syslog::info!("rx check: received package!");
-			print_hex_dump(&data, data.len());
+			print_hex_dump(&data);
+			empty_polls = 0;
 		} else {
-			syslog::info!("rx check: no packages!");
+			empty_polls = empty_polls.wrapping_add(1);
+			if empty_polls % 20 == 0 {
+				syslog::info!("rx check: polling... no packages");
+			}
 		}
 
-		c -= 1;
-		if c <= 0 {
-			break;
-		}
-
-		let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(100));
+		let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(50));
 	}
 }
 

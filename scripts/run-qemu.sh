@@ -9,6 +9,7 @@ MACHINE=$2  # Machine
 IMAGE=$3    # Image
 MODE=$4     # Run Mode
 TIMEOUT=$5  # Timeout
+SUDO=$6         # Sudo
 
 # Global Variables
 export SCRIPT_NAME=$0
@@ -24,8 +25,8 @@ echo ">>> Memory Size: $MEMSIZE"
 # Check if MEMSIZE is invalid.
 if [[ -z "$MEMSIZE" || ! "$MEMSIZE" =~ ^[0-9]+$ ]];
 then
-	echo "Error: MEMSIZE is not set or is not a valid integer."
-	exit 1
+        echo "Error: MEMSIZE is not set or is not a valid integer."
+        exit 1
 fi
 
 #===================================================================================================
@@ -37,8 +38,8 @@ fi
 #
 function usage
 {
-	echo "$SCRIPT_NAME <target> <machine> <image> [mode] [timeout]"
-	exit 1
+        echo "$SCRIPT_NAME <target> <machine> <image> [mode] [timeout] [--sudo]"
+        exit 1
 }
 
 #===================================================================================================
@@ -48,12 +49,12 @@ function usage
 # Check script arguments.
 function check_args
 {
-	# Missing binary?
-	if [ -z "$IMAGE" ];
-	then
-		echo "$SCRIPT_NAME: missing image"
-		usage
-	fi
+        # Missing binary?
+        if [ -z "$IMAGE" ];
+        then
+                echo "$SCRIPT_NAME: missing image"
+                usage
+        fi
 }
 
 #===================================================================================================
@@ -63,91 +64,102 @@ function check_args
 # Runs a binary in QEMU.
 function run_qemu
 {
-	local target=$1     # Target architecture.
-	local machine=$2    # Machine.
-	local image=$3      # Image.
-	local mode=$4       # Spawn mode (run or debug).
-	local timeout=$5    # Timeout for test mode.
-	local GDB_PORT=1234 # GDB port used for debugging.
-	local nic="-netdev user,id=net0,hostfwd=tcp::5555-:5555 -device e1000,netdev=net0"
-	local extra=""
-	local cmd=""
+        local target=$1     # Target architecture.
+        local machine=$2    # Machine.
+        local image=$3      # Image.
+        local mode=$4       # Spawn mode (run or debug).
+        local timeout=$5    # Timeout for test mode.
+        local sudo_arg=$6
+        local GDB_PORT=1234 # GDB port used for debugging.
+        local nic="-netdev tap,id=mynet0,ifname=tap0,script=no,downscript=no \
+        -device e1000,netdev=mynet0"
+        local extra=""
+        local cmd=""
 
-	# Check if the target is unsupported.
-	if [ "$target" != "i386" ]; then
-		echo "Unsupported target: $target"
-		exit 1
-	fi
+        # Check if the target is unsupported.
+        if [ "$target" != "i386" ]; then
+                echo "Unsupported target: $target"
+                exit 1
+        fi
 
-	case "$machine" in
-		"qemu-baremetal")
-			machine="-machine pc"
-			stdout="-serial stdio"
-			smp=""
-			;;
-		"qemu-baremetal-smp")
-			machine="-machine pc"
-			stdout="-serial stdio"
-			smp="-smp 2"
-			;;
-		"qemu-pc")
-			machine="-machine pc"
-			stdout="-debugcon stdio"
-			smp=""
-			# -trace events=events.txt,file=qemu-trace.log
-			extra="-monitor telnet:127.0.0.1:55555,server,nowait"
-			;;
-		"qemu-pc-smp")
-			machine="-machine pc"
-			stdout="-debugcon stdio"
-			smp="-smp 2"
-			;;
-		"qemu-isapc")
-			machine="-machine isapc"
-			stdout="-debugcon stdio"
-			smp=""
-			;;
-		*)
-			echo "Unsupported machine: $MACHINE"
-			exit 1
-			;;
-	esac
+        case "$machine" in
+                "qemu-baremetal")
+                        machine="-machine pc"
+                        stdout="-serial stdio"
+                        smp=""
+                        ;;
+                "qemu-baremetal-smp")
+                        machine="-machine pc"
+                        stdout="-serial stdio"
+                        smp="-smp 2"
+                        ;;
+                "qemu-pc")
+                        machine="-machine pc"
+                        stdout="-debugcon stdio"
+                        smp=""
+                        # -trace events=events.txt,file=qemu-trace.log
+                        extra="-monitor telnet:127.0.0.1:55555,server,nowait"
+                        ;;
+                "qemu-pc-smp")
+                        machine="-machine pc"
+                        stdout="-debugcon stdio"
+                        smp="-smp 2"
+                        ;;
+                "qemu-isapc")
+                        machine="-machine isapc"
+                        stdout="-debugcon stdio"
+                        smp=""
+                        ;;
+                *)
+                        echo "Unsupported machine: $MACHINE"
+                        exit 1
+                        ;;
+        esac
 
-	# Select QEMU from path, if available.
-	if command -v "qemu-system-$target" >/dev/null 2>&1;
-	then
-		qemu_cmd="qemu-system-$target"
-	else
-		qemu_cmd="$TOOLCHAIN_DIR/qemu/bin/qemu-system-$target"
-	fi
+        # Select QEMU from path, if available.
+        if command -v "qemu-system-$target" >/dev/null 2>&1;
+        then
+                qemu_cmd="qemu-system-$target"
+        else
+                qemu_cmd="$TOOLCHAIN_DIR/qemu/bin/qemu-system-$target"
+        fi
 
-	qemu_cmd="$qemu_cmd
-	  		$machine
-			$stdout
-			$smp
-			$nic
-			$extra
-			-display none
-			-cpu pentium3
-			-m ${MEMSIZE}B
-			-mem-prealloc"
+        qemu_cmd="$qemu_cmd
+                        $machine
+                        $stdout
+                        $smp
+                        $nic
+                        $extra
+                        -display none
+                        -cpu pentium3
+                        -m ${MEMSIZE}B
+                        -mem-prealloc"
 
-	cmd="$qemu_cmd -cdrom $image"
+        cmd="$qemu_cmd -cdrom $image"
 
-	# Run.
-	if [ "$mode" = "--debug" ];
-	then
-		cmd="$cmd -gdb tcp::$GDB_PORT -S"
-		$cmd
-	else
+        # Run.
+        if [ "$mode" = "--debug" ];
+        then
+                cmd="$cmd -gdb tcp::$GDB_PORT -S"
+                
+                if [ "$sudo_arg" = "--sudo" ]; then
+                        cmd="sudo $cmd"
+                fi
+                
+                $cmd
+        else
 
-	if [ -n "$timeout" ];
-		then
-			cmd="timeout -s SIGINT --preserve-status --foreground $timeout $cmd"
-		fi
+        if [ -n "$timeout" ];
+                then
+                        cmd="timeout -s SIGINT --preserve-status --foreground $timeout $cmd"
+                fi
 
-		$cmd 2> stderr.log
-	fi
+                if [ "$sudo_arg" = "--sudo" ]; then
+                        cmd="sudo $cmd"
+                fi
+
+                $cmd 2> stderr.log
+        fi
 }
 
 #===================================================================================================
@@ -155,7 +167,7 @@ function run_qemu
 # No debug mode.
 if [ -z "$MODE" ];
 then
-	MODE="--no-debug"
+        MODE="--no-debug"
 fi
 
 # Verbose mode.
@@ -167,20 +179,21 @@ echo "SCRIPT_NAME = $SCRIPT_NAME"
 echo "IMAGE       = $IMAGE"
 echo "MODE        = $MODE"
 echo "TIMEOUT     = $TIMEOUT"
+echo "SUDO        = $SUDO"
 echo "====================================================================="
 
 case "$TARGET" in
-	"x86")
-		check_args
-		case "$MACHINE" in
-			"qemu-baremetal" | "qemu-baremetal-smp" | "qemu-pc" | "qemu-pc-smp" | "qemu-isapc")
-				run_qemu "i386" "$MACHINE" "$IMAGE" "$MODE" "$TIMEOUT"
-				;;
-			*)
-				echo "Unsupported machine: $MACHINE"
-				;;
-		esac
-		;;
+        "x86")
+                check_args
+                case "$MACHINE" in
+                        "qemu-baremetal" | "qemu-baremetal-smp" | "qemu-pc" | "qemu-pc-smp" | "qemu-isapc")
+                                run_qemu "i386" "$MACHINE" "$IMAGE" "$MODE" "$TIMEOUT" "$SUDO"
+                                ;;
+                        *)
+                                echo "Unsupported machine: $MACHINE"
+                                ;;
+                esac
+                ;;
     *)
         echo "Unsupported target: $TARGET"
         ;;

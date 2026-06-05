@@ -63,6 +63,13 @@ export MAKE_NO_PRINT ?= yes
 export MAKE_QUIET := $(MAKE) $(if $(filter yes,$(MAKE_NO_PRINT)),--no-print-directory)
 
 #===================================================================================================
+# QEMU Configuration
+#===================================================================================================
+
+# Run QEMU with sudo privileges?
+export RUN_WITH_SUDO ?= no
+
+#===================================================================================================
 # Directories
 #===================================================================================================
 
@@ -727,13 +734,13 @@ endif
 # Runs system in release mode.
 run: image
 ifeq ($(strip $(filter $(MACHINE),microvm hyperlight)),)
-	bash $(SCRIPTS_DIR)/run-qemu.sh $(TARGET) $(MACHINE) $(IMAGE) --no-debug $(TIMEOUT)
+	bash $(SCRIPTS_DIR)/run-qemu.sh $(TARGET) $(MACHINE) $(IMAGE) --no-debug $(TIMEOUT) $(if $(filter yes,$(RUN_WITH_SUDO)),--sudo)
 endif
 
 # Runs system in debug mode.
 debug: image
 ifeq ($(strip $(filter $(MACHINE),microvm hyperlight)),)
-	bash $(SCRIPTS_DIR)/run-qemu.sh $(TARGET) $(MACHINE) $(IMAGE) --debug $(TIMEOUT)
+	bash $(SCRIPTS_DIR)/run-qemu.sh $(TARGET) $(MACHINE) $(IMAGE) --debug $(TIMEOUT) $(if $(filter yes,$(RUN_WITH_SUDO)),--sudo)
 endif
 
 #===================================================================================================
