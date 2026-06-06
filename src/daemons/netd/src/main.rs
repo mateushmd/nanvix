@@ -607,13 +607,6 @@ fn get_instant() -> Instant {
     Instant::from_millis(millis as i64)
 }
 
-#[allow(dead_code)]
-const IP: &str = "10.0.2.15";
-#[allow(dead_code)]
-const GATEWAY: &str = "10.0.2.2"; // QEMU user networking gateway
-#[allow(dead_code)]
-const PORT: u16 = 5555;
-
 pub fn print_hex_dump(buf: &[u8]) {
 	use alloc::string::String;
 	use core::fmt::Write;
@@ -648,14 +641,15 @@ pub fn print_hex_dump(buf: &[u8]) {
 	syslog::info!("------------------------------");
 }
 
+/*
 #[no_mangle]
 pub fn main() {
 	let mut e1000 = E1000Device::init();
 	
 	let ping_frame: Box<[u8]> = Box::new([
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x08, 0x06, 0x00,
-        0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x0a, 0x00,
-        0x02, 0x0f, //10.0.2.15
+        0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0xc0, 0xa8,
+        0x7a, 0xa6, //10.0.2.15
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x02, 0x02,
 	]);
 
@@ -677,13 +671,18 @@ pub fn main() {
 			if empty_polls % 20 == 0 {
 				syslog::info!("rx check: polling... no packages");
 			}
+			e1000.transmit_frame(&ping_frame).unwrap();
 		}
 
 		let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(50));
 	}
 }
+*/
 
-/*
+const IP: &str = "192.168.122.123";
+const GATEWAY: &str = "192.168.122.1";
+const PORT: u16 = 5555;
+
 #[no_mangle]
 #[allow(unused_mut, unused_variables)]
 pub fn main() {
@@ -759,8 +758,6 @@ pub fn main() {
         } else if socket.may_send() {
             syslog::info!("tcp:{} close", PORT);
             socket.close();
-            break;
         }
     }
 }
-*/
