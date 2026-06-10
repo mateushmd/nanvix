@@ -685,6 +685,9 @@ pub fn main() {
 const IP: &str = "10.0.0.2";
 const GATEWAY: &str = "10.0.0.1";
 const PORT: u16 = 5555;
+const TCP_BUFFER_SIZE: usize = 16384;
+const UDP_PACKETS_QUEUE: usize = 10;
+const UDP_PAYLOAD_SIZE: usize = UDP_PACKETS_QUEUE * 1536;
 
 #[no_mangle]
 #[allow(unused_mut, unused_variables)]
@@ -706,12 +709,12 @@ pub fn main() {
         .routes_mut()
         .add_default_ipv4_route(Ipv4Address::from_str(GATEWAY).unwrap())
         .unwrap();
-    let udp_rx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 32], vec![0; 1024]);
-    let udp_tx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 32], vec![0; 1024]);
+    let udp_rx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; UDP_PACKETS_QUEUE], vec![0; UDP_PAYLOAD_SIZE]);
+    let udp_tx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; UDP_PACKETS_QUEUE], vec![0; UDP_PAYLOAD_SIZE]);
     let udp_socket = udp::Socket::new(udp_rx_buffer, udp_tx_buffer);
 
-    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
-    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
+    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]);
+    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]);
     let tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
 
     let mut sockets = SocketSet::new(vec![]);
