@@ -54,7 +54,10 @@ use smoltcp::{
         RxToken,
         TxToken,
     },
-    socket::tcp,
+    socket::{
+        tcp,
+        udp
+    },
     time::Instant,
     wire::{
         EthernetAddress,
@@ -575,7 +578,7 @@ impl Device for E1000Device {
         _timestamp: smoltcp::time::Instant,
     ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         let packet = self.receive_frame()?;
-        syslog::info!("E1000 recebeu um frame de {} bytes!", packet.len());
+        //syslog::info!("E1000 recebeu um frame de {} bytes!", packet.len());
         Some((E1000RxToken { buffer: packet }, E1000TxToken { device: self }))
     }
 
@@ -679,8 +682,8 @@ pub fn main() {
 }
 */
 
-const IP: &str = "192.168.122.123";
-const GATEWAY: &str = "192.168.122.1";
+const IP: &str = "10.0.0.2";
+const GATEWAY: &str = "10.0.0.1";
 const PORT: u16 = 5555;
 
 #[no_mangle]
@@ -703,6 +706,9 @@ pub fn main() {
         .routes_mut()
         .add_default_ipv4_route(Ipv4Address::from_str(GATEWAY).unwrap())
         .unwrap();
+    let udp_rx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 32], vec![0; 1024]);
+    let udp_tx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 32], vec![0; 1024]);
+    let udp_socket = udp::Socket::new(udp_rx_buffer, udp_tx_buffer);
 
     let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
     let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 1024]);
@@ -710,6 +716,7 @@ pub fn main() {
 
     let mut sockets = SocketSet::new(vec![]);
     let tcp_handle = sockets.add(tcp_socket);
+    let udp_handle = sockets.add(udp_socket);
 
     let mut tcp_active = false;
 
@@ -718,6 +725,24 @@ pub fn main() {
     loop {
         let timestamp = get_instant();
         iface.poll(timestamp, &mut e1000, &mut sockets);
+
+        let socket = sockets.get_mut::<udp::Socket>(udp_handle);
+        if !socket.is_open() {
+            syslog::info!("listening on port {}...", PORT);
+            socket.bind(PORT).unwrap()
+        }
+        let client = match socket.recv() {
+            Ok((data, endpoint)) => {
+                let mut data = data.to_vec();
+                data.reverse();
+                Some((endpoint, data))
+            }
+            Err(_) => None,
+        };
+        if let Some((endpoint, data)) = client {
+            socket.send_slice(&data, endpoint).unwrap();
+        }
+
 
         let socket = sockets.get_mut::<tcp::Socket>(tcp_handle);
         if !socket.is_open() {
@@ -736,7 +761,6 @@ pub fn main() {
                 .recv(|buffer| {
                     let recvd_len = buffer.len();
                     if !buffer.is_empty() {
-                        syslog::info!("tcp:{} recv {} bytes: {:?}", PORT, recvd_len, buffer);
                         let mut lines = buffer
                             .split(|&b| b == b'\n')
                             .map(ToOwned::to_owned)
@@ -752,7 +776,6 @@ pub fn main() {
                 })
                 .unwrap();
             if socket.can_send() && !data.is_empty() {
-                syslog::info!("tcp:{} send data: {:?}", PORT, data);
                 socket.send_slice(&data[..]).unwrap();
             }
         } else if socket.may_send() {
