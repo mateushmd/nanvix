@@ -753,6 +753,10 @@ pub fn main() {
             socket.listen(PORT).unwrap();
         }
 
+        if socket.recv_queue() != 0 {
+            syslog::info!("RECV-QUEUE -> {:?}", socket.recv_queue());
+        }
+
         if socket.is_active() && !tcp_active {
             syslog::info!("tcp:{} connected", PORT);
         } else if !socket.is_active() && tcp_active {

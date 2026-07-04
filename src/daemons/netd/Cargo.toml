@@ -12,7 +12,14 @@ nvx = { workspace = true }
 sys = { workspace = true }
 syscall = { workspace = true, features = ["syscall"] }
 syslog = { workspace = true }
-smoltcp = { workspace = true, features = ["medium-ethernet", "socket-udp", "socket-icmp"] }
+smoltcp = { workspace = true, features = [
+    "medium-ethernet", 
+    "socket-udp", 
+    "socket-icmp", 
+    "assembler-max-segment-count-8", 
+    "reassembly-buffer-count-32",
+    "proto-ipv4", "proto-ipv6"
+] }
 
 [features]
 # Logging Features
