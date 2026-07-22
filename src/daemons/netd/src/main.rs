@@ -644,44 +644,6 @@ pub fn print_hex_dump(buf: &[u8]) {
 	syslog::info!("------------------------------");
 }
 
-/*
-#[no_mangle]
-pub fn main() {
-	let mut e1000 = E1000Device::init();
-	
-	let ping_frame: Box<[u8]> = Box::new([
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0x08, 0x06, 0x00,
-        0x01, 0x08, 0x00, 0x06, 0x04, 0x00, 0x01, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56, 0xc0, 0xa8,
-        0x7a, 0xa6, //10.0.2.15
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x02, 0x02,
-	]);
-
-	let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(500));
-
-	e1000.transmit_frame(&ping_frame).unwrap();
-	e1000.transmit_frame(&ping_frame).unwrap();
-	e1000.transmit_frame(&ping_frame).unwrap();
-	e1000.transmit_frame(&ping_frame).unwrap();
-
-	let mut empty_polls = 0u32;
-	loop {
-		if let Some(data) = e1000.receive_frame() {
-			syslog::info!("rx check: received package!");
-			print_hex_dump(&data);
-			empty_polls = 0;
-		} else {
-			empty_polls = empty_polls.wrapping_add(1);
-			if empty_polls % 20 == 0 {
-				syslog::info!("rx check: polling... no packages");
-			}
-			e1000.transmit_frame(&ping_frame).unwrap();
-		}
-
-		let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(50));
-	}
-}
-*/
-
 const IP: &str = "10.0.0.2";
 const GATEWAY: &str = "10.0.0.1";
 const PORT: u16 = 5555;
@@ -722,6 +684,26 @@ pub fn main() {
     let udp_handle = sockets.add(udp_socket);
 
     let mut tcp_active = false;
+    let mut tcp_app_buffer: Vec<u8> = Vec::new();
+    let mut tcp_out_buffer: Vec<u8> = Vec::new();
+
+    {
+        let udp_socket = sockets.get_mut::<udp::Socket>(udp_handle);
+        if let Err(e) = udp_socket.bind(PORT) {
+            syslog::error!("failed to bind udp socket: {:?}", e);
+        } else {
+            syslog::info!("listening on udp port {}...", PORT);
+        }
+    }
+
+    {
+        let tcp_socket = sockets.get_mut::<tcp::Socket>(tcp_handle);
+        if let Err(e) = tcp_socket.listen(PORT) {
+            syslog::error!("failed to listen on tcp socket: {:?}", e);
+        } else {
+            syslog::info!("listening on tcp port {}...", PORT);
+        }
+    }
 
     syslog::trace!("Entering polling loop...");
 
@@ -729,65 +711,99 @@ pub fn main() {
         let timestamp = get_instant();
         iface.poll(timestamp, &mut e1000, &mut sockets);
 
-        let socket = sockets.get_mut::<udp::Socket>(udp_handle);
-        if !socket.is_open() {
-            syslog::info!("listening on port {}...", PORT);
-            socket.bind(PORT).unwrap()
-        }
-        let client = match socket.recv() {
-            Ok((data, endpoint)) => {
-                let mut data = data.to_vec();
-                data.reverse();
-                Some((endpoint, data))
+        {
+            let socket = sockets.get_mut::<udp::Socket>(udp_handle);
+            let client = match socket.recv() {
+                Ok((data, endpoint)) => {
+                    let mut data = data.to_vec();
+                    data.reverse();
+                    Some((endpoint, data))
+                }
+                Err(_) => None,
+            };
+            if let Some((endpoint, data)) = client {
+                let _ = socket.send_slice(&data, endpoint);
             }
-            Err(_) => None,
-        };
-        if let Some((endpoint, data)) = client {
-            socket.send_slice(&data, endpoint).unwrap();
         }
 
+        {
+            let socket = sockets.get_mut::<tcp::Socket>(tcp_handle);
 
-        let socket = sockets.get_mut::<tcp::Socket>(tcp_handle);
-        if !socket.is_open() {
-            syslog::info!("listening on port {}...", PORT);
-            socket.listen(PORT).unwrap();
-        }
+            if socket.is_active() && !tcp_active {
+                syslog::info!("tcp:{} connected", PORT);
+                tcp_active = true;
+            } else if !socket.is_active() && tcp_active {
+                syslog::info!("tcp:{} disconnected", PORT);
+                tcp_active = false;
+                tcp_app_buffer.clear();
+                tcp_out_buffer.clear();
+                socket.abort();
+                if let Err(e) = socket.listen(PORT) {
+                    syslog::error!("failed to listen on tcp socket: {:?}", e);
+                } else {
+                    syslog::info!("listening on tcp port {}...", PORT);
+                }
+            }
 
-        if socket.recv_queue() != 0 {
-            syslog::info!("RECV-QUEUE -> {:?}", socket.recv_queue());
-        }
-
-        if socket.is_active() && !tcp_active {
-            syslog::info!("tcp:{} connected", PORT);
-        } else if !socket.is_active() && tcp_active {
-            syslog::info!("tcp:{} disconnected", PORT);
-        }
-        tcp_active = socket.is_active();
-        if socket.may_recv() {
-            let data = socket
-                .recv(|buffer| {
-                    let recvd_len = buffer.len();
+            if socket.may_recv() {
+                let _ = socket.recv(|buffer| {
                     if !buffer.is_empty() {
-                        let mut lines = buffer
-                            .split(|&b| b == b'\n')
-                            .map(ToOwned::to_owned)
-                            .collect::<Vec<_>>();
-                        for line in lines.iter_mut() {
-                            line.reverse();
-                        }
-                        let data = lines.join(&b'\n');
-                        (recvd_len, data)
-                    } else {
-                        (0, vec![])
+                        tcp_app_buffer.extend_from_slice(buffer);
                     }
-                })
-                .unwrap();
-            if socket.can_send() && !data.is_empty() {
-                socket.send_slice(&data[..]).unwrap();
+                    (buffer.len(), ())
+                });
+
+                if tcp_app_buffer.len() > TCP_BUFFER_SIZE {
+                    syslog::warn!("tcp:{} app buffer overflow", PORT);
+                    tcp_app_buffer.clear();
+                }
+
+                while let Some(pos) = tcp_app_buffer.iter().position(|&b| b == b'\n') {
+                    let mut line = tcp_app_buffer.drain(..=pos).collect::<Vec<_>>();
+                    line.pop(); // remove \n
+                    
+                    let has_cr = line.last() == Some(&b'\r');
+                    if has_cr {
+                        line.pop();
+                    }
+
+                    line.reverse();
+
+                    if has_cr {
+                        line.push(b'\r');
+                    }
+                    line.push(b'\n');
+
+                    tcp_out_buffer.extend_from_slice(&line);
+                }
+
+                if socket.can_send() && !tcp_out_buffer.is_empty() {
+                    match socket.send_slice(&tcp_out_buffer) {
+                        Ok(sent) => {
+                            tcp_out_buffer.drain(..sent);
+                        }
+                        Err(_) => {}
+                    }
+                }
+            } else if socket.may_send() {
+                if socket.can_send() && !tcp_out_buffer.is_empty() {
+                    match socket.send_slice(&tcp_out_buffer) {
+                        Ok(sent) => {
+                            tcp_out_buffer.drain(..sent);
+                        }
+                        Err(_) => {}
+                    }
+                }
+                
+                if tcp_out_buffer.is_empty() {
+                    syslog::info!("tcp:{} close", PORT);
+                    socket.close();
+                    tcp_app_buffer.clear();
+                    tcp_out_buffer.clear();
+                }
             }
-        } else if socket.may_send() {
-            syslog::info!("tcp:{} close", PORT);
-            socket.close();
         }
+
+        // let _ = ::sys::kcall::pm::sleep(::core::time::Duration::from_millis(1));
     }
 }
